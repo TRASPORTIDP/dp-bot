@@ -83,10 +83,15 @@ Scrivici qui la tua richiesta oppure lascia il tuo numero e ti ricontattiamo al 
   const twiml = new twilio.twiml.MessagingResponse();
   twiml.message(reply);
 
-  res.writeHead(200, { "Content-Type": "text/xml" });
-  res.end(twiml.toString());
+  res.type("text/xml");
+  res.send(twiml.toString());
 });
 
-app.listen(3000, () => {
-  console.log("Server avviato sulla porta 3000");
+app.get("/", (req, res) => {
+  res.send("Bot Trasporti DP attivo");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server avviato sulla porta ${PORT}`);
 });

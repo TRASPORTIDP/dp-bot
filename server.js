@@ -3,12 +3,23 @@ require("dotenv").config();
 const express = require("express");
 const twilio = require("twilio");
 const OpenAI = require("openai");
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
+});
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
 });
 
 function normalize(text) {
@@ -49,7 +60,11 @@ function detectIntent(message) {
     message.includes("titolare") ||
     message.includes("operatore") ||
     message.includes("richiamare") ||
-    message.includes("appuntamento")
+    message.includes("appuntamento") ||
+    message.includes("parlare") ||
+    message.includes("qualcuno") ||
+    message.includes("contatto") ||
+    message.includes("telefono")
   ) return "contatto";
 
   return "altro";
@@ -96,15 +111,52 @@ Ti ricontattiamo al più presto 👍`;
     case "contatto":
       return `Perfetto 👍
 
-Scrivici qui la tua richiesta oppure lascia il tuo numero e ti ricontattiamo al più presto.`;
+Puoi:
+📞 lasciarci il tuo numero
+oppure
+📝 scriverci qui la tua richiesta
+
+Ti ricontattiamo al più presto.`;
 
     default:
       return null;
   }
 }
 
+async function sendNotificationEmail({ from, rawMessage, intent, reply }) {
+  const recipients = (process.env.NOTIFY_EMAILS || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if (!recipients.length) return;
+
+  const subject = `Nuovo messaggio WhatsApp - ${intent.toUpperCase()}`;
+
+  const text = `
+Nuovo messaggio ricevuto dal bot WhatsApp
+
+Numero cliente: ${from}
+Servizio rilevato: ${intent}
+
+Messaggio cliente:
+${rawMessage}
+
+Risposta bot:
+${reply}
+`;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_USER,
+    to: recipients.join(", "),
+    subject,
+    text
+  });
+}
+
 app.post("/whatsapp", async (req, res) => {
   const rawMessage = req.body.Body || "";
+  const from = req.body.From || "";
   const message = normalize(rawMessage);
 
   console.log("Messaggio ricevuto:", message);
@@ -122,26 +174,32 @@ app.post("/whatsapp", async (req, res) => {
             content: `Sei l'assistente WhatsApp di Trasporti DP.
 
 Rispondi sempre in italiano.
-Tono: naturale, breve, professionale, utile.
+Tono: naturale, breve, professionale e utile.
+
+I servizi dell'azienda sono solo:
+- officina
+- noleggio auto e furgoni
+- trasporto auto
+- vendita auto
 
 Regole:
 - non inventare servizi
 - non inventare disponibilità
-- i servizi sono solo: officina, noleggio, trasporto auto, vendita auto
-- se il messaggio è generico, guida il cliente
-- se il cliente saluta, rispondi con un saluto e chiedi cosa gli serve
+- se il cliente saluta, rispondi con un messaggio di benvenuto
+- se il cliente scrive un messaggio generico, guidalo
 - se non è chiaro, chiedi se gli serve officina, noleggio, trasporto o vendita
 
-Se il cliente scrive messaggi generici tipo:
+Se il cliente scrive cose come:
 "ciao"
 "salve"
 "buongiorno"
-"vorrei informazioni"
 "mi aiutate?"
+"vorrei informazioni"
 "ho bisogno di aiuto"
 
-rispondi in modo naturale e professionale, ad esempio:
+puoi rispondere così:
 "Ciao 👋 Benvenuto in Trasporti DP.
+
 Possiamo aiutarti con:
 - officina
 - noleggio
@@ -149,7 +207,6 @@ Possiamo aiutarti con:
 - vendita auto
 
 Scrivici pure di cosa hai bisogno 👍"`
-
           },
           {
             role: "user",
@@ -160,10 +217,30 @@ Scrivici pure di cosa hai bisogno 👍"`
 
       reply =
         response.output_text ||
-        "Ciao 👋 Benvenuto in Trasporti DP. Scrivici pure di cosa hai bisogno 👍";
+        `Ciao 👋 Benvenuto in Trasporti DP.
+
+Possiamo aiutarti con:
+- officina
+- noleggio
+- trasporto auto
+- vendita auto
+
+Scrivici pure di cosa hai bisogno 👍`;
     }
 
     console.log("RISPOSTA BOT:", reply);
+
+    try {
+      await sendNotificationEmail({
+        from,
+        rawMessage,
+        intent,
+        reply
+      });
+      console.log("Notifica email inviata");
+    } catch (mailError) {
+      console.error("ERRORE EMAIL:", mailError);
+    }
 
     const twiml = new twilio.twiml.MessagingResponse();
     twiml.message(reply);

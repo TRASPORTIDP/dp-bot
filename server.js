@@ -15,7 +15,6 @@ function normalize(text) {
   return (text || "").toLowerCase().trim();
 }
 
-// 🔥 LOGICA SERVIZI (NON SBAGLIA)
 function detectIntent(message) {
   if (
     message.includes("bisarca") ||
@@ -56,7 +55,6 @@ function detectIntent(message) {
   return "altro";
 }
 
-// 🔥 RISPOSTE PROFESSIONALI
 function getFixedReply(intent) {
   switch (intent) {
     case "trasporto":
@@ -115,7 +113,6 @@ app.post("/whatsapp", async (req, res) => {
   let reply = getFixedReply(intent);
 
   try {
-    // 🔥 CHATGPT SOLO SE NON È UN SERVIZIO
     if (!reply) {
       const response = await openai.responses.create({
         model: "gpt-4.1-mini",
@@ -124,12 +121,35 @@ app.post("/whatsapp", async (req, res) => {
             role: "system",
             content: `Sei l'assistente WhatsApp di Trasporti DP.
 
-Rispondi in italiano, breve e professionale.
+Rispondi sempre in italiano.
+Tono: naturale, breve, professionale, utile.
 
-Se il cliente non è chiaro, guidalo verso:
-officina, noleggio, trasporto o vendita.
+Regole:
+- non inventare servizi
+- non inventare disponibilità
+- i servizi sono solo: officina, noleggio, trasporto auto, vendita auto
+- se il messaggio è generico, guida il cliente
+- se il cliente saluta, rispondi con un saluto e chiedi cosa gli serve
+- se non è chiaro, chiedi se gli serve officina, noleggio, trasporto o vendita
 
-Non inventare servizi.`
+Se il cliente scrive messaggi generici tipo:
+"ciao"
+"salve"
+"buongiorno"
+"vorrei informazioni"
+"mi aiutate?"
+"ho bisogno di aiuto"
+
+rispondi in modo naturale e professionale, ad esempio:
+"Ciao 👋 Benvenuto in Trasporti DP.
+Possiamo aiutarti con:
+- officina
+- noleggio
+- trasporto auto
+- vendita auto
+
+Scrivici pure di cosa hai bisogno 👍"`
+
           },
           {
             role: "user",
@@ -154,7 +174,9 @@ Non inventare servizi.`
     console.error("ERRORE:", error);
 
     const twiml = new twilio.twiml.MessagingResponse();
-    twiml.message("C'è un problema temporaneo, riprova tra poco.");
+    twiml.message(
+      "Ciao 👋 Al momento c'è un problema temporaneo. Scrivici se ti serve officina, noleggio, trasporto o vendita."
+    );
 
     res.type("text/xml");
     res.send(twiml.toString());

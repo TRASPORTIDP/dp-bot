@@ -25,7 +25,7 @@ const GENERIC_NUMBERS = [
 ];
 
 // 📲 NUMERO TWILIO (IMPORTANTE METTILO GIUSTO)
-const FROM_NUMBER = "whatsapp:+TUO_NUMERO_TWILIO";
+const FROM_NUMBER = "whatsapp:+390744817108";
 
 // 🔍 NORMALIZZA
 function normalize(text) {

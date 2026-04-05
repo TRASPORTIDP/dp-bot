@@ -2,143 +2,230 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
+const OpenAI = require('openai');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 
-const client = twilio(
+const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// ⚠️ METTI IL TUO NUMERO TWILIO WHATSAPP
-const TWILIO_WHATSAPP_NUMBER = 'whatsapp:+14155238886';
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-// 🔧 OFFICINA
-const OFFICINA = ['whatsapp:+393287377675'];
+// NUMERO WHATSAPP TWILIO CHE RICEVE I MESSAGGI CLIENTI
+// Mettilo in formato whatsapp:+39...
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 
-// 🚐🚗🚛 TUTTO IL RESTO
-const GENERALE = [
+// MODELLO OPENAI
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+// NUMERI INTERNI
+const OFFICINA_NUMBERS = ['whatsapp:+393287377675'];
+
+const GENERAL_NUMBERS = [
   'whatsapp:+393472733226',
   'whatsapp:+393494040073'
 ];
 
-// INVIO NOTIFICA INTERNA
-async function notifica(numeri, testo) {
-  for (const numero of numeri) {
+// LINK
+const LINK_OFFICINA =
+  'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
+
+const LINK_NOLEGGIO =
+  'https://calendly.com/contabilita-trasportidp/noleggio-dp';
+
+// PAROLE CHIAVE MENU
+function detectIntent(text) {
+  const msg = (text || '').toLowerCase();
+
+  if (msg.includes('officina') || msg.includes('tagliando') || msg.includes('riparazione') || msg.includes('meccanico')) {
+    return 'officina';
+  }
+
+  if (msg.includes('noleggio') || msg.includes('affitto auto') || msg.includes('affitto furgone') || msg.includes('noleggiare')) {
+    return 'noleggio';
+  }
+
+  if (msg.includes('vendita') || msg.includes('comprare auto') || msg.includes('acquisto auto') || msg.includes('auto usata')) {
+    return 'vendita';
+  }
+
+  if (msg.includes('trasporto') || msg.includes('bisarca') || msg.includes('trasportare auto') || msg.includes('ritiro auto')) {
+    return 'trasporto';
+  }
+
+  if (
+    msg.includes('prenot') ||
+    msg.includes('appuntamento') ||
+    msg.includes('quando posso') ||
+    msg.includes('disponibil')
+  ) {
+    return 'prenotazione_generica';
+  }
+
+  return 'generico';
+}
+
+// CREA RISPOSTA CON OPENAI
+async function createAiReply({ customerName, incomingText, intent }) {
+  let extraInstruction = '';
+
+  if (intent === 'officina') {
+    extraInstruction =
+      `Il cliente sta chiedendo OFFICINA.
+Rispondi in modo professionale, breve e cordiale.
+Digli che la richiesta è stata ricevuta e che sarà ricontattato a breve.
+Invitalo anche a prenotare qui: ${LINK_OFFICINA}
+Non inserire numeri di telefono interni.`;
+  } else if (intent === 'noleggio') {
+    extraInstruction =
+      `Il cliente sta chiedendo NOLEGGIO.
+Rispondi in modo professionale, breve e cordiale.
+Digli che la richiesta è stata ricevuta e che sarà ricontattato a breve.
+Invitalo anche a prenotare qui: ${LINK_NOLEGGIO}
+Non inserire numeri di telefono interni.`;
+  } else if (intent === 'vendita') {
+    extraInstruction =
+      `Il cliente sta chiedendo VENDITA AUTO.
+Rispondi in modo professionale, breve e cordiale.
+Digli che la richiesta è stata ricevuta e che sarà ricontattato a breve.
+Non inserire numeri di telefono interni.`;
+  } else if (intent === 'trasporto') {
+    extraInstruction =
+      `Il cliente sta chiedendo TRASPORTO AUTO.
+Rispondi in modo professionale, breve e cordiale.
+Digli che la richiesta è stata ricevuta e che sarà ricontattato a breve.
+Non inserire numeri di telefono interni.`;
+  } else if (intent === 'prenotazione_generica') {
+    extraInstruction =
+      `Il cliente sembra voler prenotare ma non ha specificato bene il servizio.
+Rispondi in modo professionale, breve e cordiale.
+Chiedi di indicare se si tratta di: Officina, Noleggio, Vendita o Trasporto.
+Non inserire numeri di telefono interni.`;
+  } else {
+    extraInstruction =
+      `Il cliente ha inviato un messaggio generico.
+Rispondi in modo professionale, breve e cordiale.
+Invitalo a specificare il servizio: Officina, Noleggio, Vendita o Trasporto.
+Non inserire numeri di telefono interni.`;
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: OPENAI_MODEL,
+    temperature: 0.5,
+    messages: [
+      {
+        role: 'system',
+        content:
+          `Sei l'assistente WhatsApp di DP Rent / Trasporti DP.
+Rispondi sempre in italiano.
+Tono: professionale, cordiale, chiaro, commerciale ma non aggressivo.
+Messaggi brevi, leggibili su WhatsApp.
+Non inventare prezzi, disponibilità o promesse specifiche.
+Non mostrare mai numeri interni o dettagli tecnici.
+Usa al massimo 5-7 righe.`
+      },
+      {
+        role: 'user',
+        content:
+          `Nome cliente: ${customerName || 'Cliente'}
+Messaggio cliente: ${incomingText}
+
+Istruzioni:
+${extraInstruction}`
+      }
+    ]
+  });
+
+  return completion.choices?.[0]?.message?.content?.trim() ||
+    "Ciao 👋 abbiamo ricevuto la tua richiesta. Ti ricontatteremo a breve.";
+}
+
+// INVIO NOTIFICHE INTERNE
+async function sendInternalNotification(numbers, text) {
+  for (const to of numbers) {
     try {
-      await client.messages.create({
+      const result = await twilioClient.messages.create({
         from: TWILIO_WHATSAPP_NUMBER,
-        to: numero,
-        body: testo
+        to,
+        body: text
       });
-    } catch (e) {
-      console.error('Errore invio:', e.message);
+      console.log(`Notifica inviata a ${to}: ${result.sid}`);
+    } catch (error) {
+      console.error(`Errore invio notifica a ${to}:`, error.message);
     }
   }
 }
 
 app.post('/whatsapp', async (req, res) => {
-  const msg = (req.body.Body || '').trim();
-  const msgLower = msg.toLowerCase();
-  const from = req.body.From;
-  const nome = req.body.ProfileName || 'Cliente';
-
+  const incomingText = (req.body.Body || '').trim();
+  const incomingFrom = req.body.From || '';
+  const profileName = req.body.ProfileName || 'Cliente';
   const twiml = new twilio.twiml.MessagingResponse();
 
-  let risposta = 
-    "Ciao 👋 benvenuto in DP!\n\n" +
-    "Scrivi il servizio:\n\n" +
-    "🔧 Officina\n" +
-    "🚐 Noleggio\n" +
-    "🚗 Vendita\n" +
-    "🚛 Trasporto";
-
   try {
-
-    // 🔧 OFFICINA
-    if (msgLower.includes('officina')) {
-
-      risposta =
-        "🔧 OFFICINA DP\n\n" +
-        "Richiesta ricevuta ✅\n" +
-        "Un nostro operatore ti contatterà a breve.\n\n" +
-        "Puoi anche prenotare qui:\n" +
-        "👉 https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp";
-
-      await notifica(
-        OFFICINA,
-        `🔔 OFFICINA\n\n👤 ${nome}\n📞 ${from}\n💬 ${msg}`
-      );
+    if (!process.env.TWILIO_ACCOUNT_SID) {
+      throw new Error('TWILIO_ACCOUNT_SID mancante');
+    }
+    if (!process.env.TWILIO_AUTH_TOKEN) {
+      throw new Error('TWILIO_AUTH_TOKEN mancante');
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY mancante');
+    }
+    if (!TWILIO_WHATSAPP_NUMBER) {
+      throw new Error('TWILIO_WHATSAPP_NUMBER mancante');
     }
 
-    // 🚐 NOLEGGIO
-    else if (msgLower.includes('noleggio')) {
+    const intent = detectIntent(incomingText);
 
-      risposta =
-        "🚐 NOLEGGIO DP\n\n" +
-        "Richiesta ricevuta ✅\n" +
-        "Ti contatteremo a breve.\n\n" +
-        "Prenota subito:\n" +
-        "👉 https://calendly.com/contabilita-trasportidp/noleggio-dp";
+    const aiReply = await createAiReply({
+      customerName: profileName,
+      incomingText,
+      intent
+    });
 
-      await notifica(
-        GENERALE,
-        `🔔 NOLEGGIO\n\n👤 ${nome}\n📞 ${from}\n💬 ${msg}`
-      );
+    let internalRecipients = GENERAL_NUMBERS;
+    let reparto = 'GENERICO';
+
+    if (intent === 'officina') {
+      internalRecipients = OFFICINA_NUMBERS;
+      reparto = 'OFFICINA';
+    } else if (intent === 'noleggio') {
+      internalRecipients = GENERAL_NUMBERS;
+      reparto = 'NOLEGGIO';
+    } else if (intent === 'vendita') {
+      internalRecipients = GENERAL_NUMBERS;
+      reparto = 'VENDITA';
+    } else if (intent === 'trasporto') {
+      internalRecipients = GENERAL_NUMBERS;
+      reparto = 'TRASPORTO';
+    } else if (intent === 'prenotazione_generica') {
+      internalRecipients = GENERAL_NUMBERS;
+      reparto = 'PRENOTAZIONE GENERICA';
     }
 
-    // 🚗 VENDITA
-    else if (msgLower.includes('vendita')) {
+    const internalText =
+      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `👤 Cliente: ${profileName}\n` +
+      `📞 Numero: ${incomingFrom}\n` +
+      `💬 Messaggio: ${incomingText}`;
 
-      risposta =
-        "🚗 VENDITA AUTO\n\n" +
-        "Richiesta ricevuta ✅\n" +
-        "Ti contatteremo a breve.";
+    await sendInternalNotification(internalRecipients, internalText);
 
-      await notifica(
-        GENERALE,
-        `🔔 VENDITA\n\n👤 ${nome}\n📞 ${from}\n💬 ${msg}`
-      );
-    }
-
-    // 🚛 TRASPORTO
-    else if (msgLower.includes('trasporto') || msgLower.includes('bisarca')) {
-
-      risposta =
-        "🚛 TRASPORTO AUTO\n\n" +
-        "Richiesta ricevuta ✅\n" +
-        "Ti contatteremo a breve.";
-
-      await notifica(
-        GENERALE,
-        `🔔 TRASPORTO\n\n👤 ${nome}\n📞 ${from}\n💬 ${msg}`
-      );
-    }
-
-    // 🔁 QUALSIASI ALTRO
-    else {
-
-      risposta =
-        "Messaggio ricevuto ✅\n" +
-        "Ti ricontatteremo a breve.\n\n" +
-        "Puoi scrivere:\n" +
-        "🔧 Officina\n🚐 Noleggio\n🚗 Vendita\n🚛 Trasporto";
-
-      await notifica(
-        GENERALE,
-        `🔔 GENERICO\n\n👤 ${nome}\n📞 ${from}\n💬 ${msg}`
-      );
-    }
-
-    twiml.message(risposta);
+    twiml.message(aiReply);
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     res.end(twiml.toString());
+  } catch (error) {
+    console.error('Errore generale:', error.message);
 
-  } catch (err) {
-    console.error(err);
-
-    twiml.message("Messaggio ricevuto. Ti contatteremo a breve.");
+    twiml.message(
+      "Ciao 👋 abbiamo ricevuto il tuo messaggio. Ti ricontatteremo al più presto."
+    );
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     res.end(twiml.toString());
   }
@@ -146,5 +233,5 @@ app.post('/whatsapp', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('Server attivo su porta ' + PORT);
+  console.log(`Server avviato sulla porta ${PORT}`);
 });

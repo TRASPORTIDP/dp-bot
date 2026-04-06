@@ -15,7 +15,7 @@ const twilioClient = twilio(
 
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
 
-// DESTINATARI INTERNI
+// NUMERI INTERNI
 const OFFICINA_NUMBERS = ['whatsapp:+393287377675'];
 const GENERAL_NUMBERS = [
   'whatsapp:+393472733226',
@@ -27,7 +27,7 @@ const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
 const SESSION_TIMEOUT_MS = 1000 * 60 * 60 * 6; // 6 ore
 
 // ----------------------
-// GESTIONE SESSIONI
+// SESSIONI
 // ----------------------
 function loadSessions() {
   try {
@@ -177,7 +177,7 @@ function getRecipientsByFlow(flow) {
 }
 
 // ----------------------
-// NOTIFICHE INTERNE
+// NOTIFICHE
 // ----------------------
 async function sendInternalNotification(numbers, text, incomingFrom) {
   for (const to of numbers) {
@@ -200,7 +200,7 @@ async function sendInternalNotification(numbers, text, incomingFrom) {
 }
 
 // ----------------------
-// RIEPILOGO INTERNO
+// RIEPILOGO
 // ----------------------
 function buildInternalSummary(session) {
   const name = session.profileName || 'Cliente';
@@ -528,32 +528,26 @@ app.post('/whatsapp', async (req, res) => {
       return res.end(twiml.toString());
     }
 
-    // FLOW ATTIVO
-    if (session.flow === 'officina') {
-      twiml.message(await handleOfficina(session, incomingText));
+    // SE C'È UN FLOW ATTIVO, GESTISCO SOLO QUELLO
+    if (session.flow) {
+      if (session.flow === 'officina') {
+        twiml.message(await handleOfficina(session, incomingText));
+      } else if (session.flow === 'noleggio') {
+        twiml.message(await handleNoleggio(session, incomingText));
+      } else if (session.flow === 'vendita') {
+        twiml.message(await handleVendita(session, incomingText));
+      } else if (session.flow === 'trasporto') {
+        twiml.message(await handleTrasporto(session, incomingText));
+      } else {
+        resetSession(incomingFrom);
+        twiml.message(mainMenu());
+      }
+
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    if (session.flow === 'noleggio') {
-      twiml.message(await handleNoleggio(session, incomingText));
-      res.writeHead(200, { 'Content-Type': 'text/xml' });
-      return res.end(twiml.toString());
-    }
-
-    if (session.flow === 'vendita') {
-      twiml.message(await handleVendita(session, incomingText));
-      res.writeHead(200, { 'Content-Type': 'text/xml' });
-      return res.end(twiml.toString());
-    }
-
-    if (session.flow === 'trasporto') {
-      twiml.message(await handleTrasporto(session, incomingText));
-      res.writeHead(200, { 'Content-Type': 'text/xml' });
-      return res.end(twiml.toString());
-    }
-
-    // NUOVO INTENTO
+    // SOLO SE NON C'È FLOW ATTIVO
     const intent = detectIntent(incomingText);
 
     if (intent === 'officina') {
@@ -565,15 +559,7 @@ app.post('/whatsapp', async (req, res) => {
     } else if (intent === 'trasporto') {
       twiml.message(startFlow(session, 'trasporto'));
     } else {
-      twiml.message(
-        "Ciao 👋 benvenuto in DP\n\n" +
-        "Seleziona il servizio:\n" +
-        "🔧 Officina\n" +
-        "🚐 Noleggio\n" +
-        "🚗 Vendita\n" +
-        "🚛 Trasporto\n\n" +
-        "Scrivi il servizio che ti interessa."
-      );
+      twiml.message(mainMenu());
     }
 
     res.writeHead(200, { 'Content-Type': 'text/xml' });

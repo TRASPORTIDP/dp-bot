@@ -39,6 +39,11 @@ function normalize(text) {
   return cleanText(text).toLowerCase();
 }
 
+function formatCustomerName(profileName) {
+  const name = cleanText(profileName);
+  return name || 'Cliente';
+}
+
 function detectIntent(text) {
   const msg = normalize(text);
 
@@ -120,9 +125,11 @@ function getReparto(intent) {
 // =========================
 // TESTI PROFESSIONALI
 // =========================
-function buildWelcomeMenu() {
+function buildWelcomeMenu(profileName) {
+  const customerName = formatCustomerName(profileName);
+
   return (
-    'Buongiorno 👋\n' +
+    `Salve ${customerName} 👋\n` +
     'Benvenuto in *Trasporti DP*.\n\n' +
     'Per poterla assistere al meglio, selezioni il servizio di suo interesse rispondendo con il numero corrispondente:\n\n' +
     '1️⃣ *Officina* 🔧\n' +
@@ -133,18 +140,20 @@ function buildWelcomeMenu() {
   );
 }
 
-function buildStartMessageByIntent(intent) {
+function buildStartMessageByIntent(intent, profileName) {
+  const customerName = formatCustomerName(profileName);
+
   if (intent === 'officina') {
     return (
-      'Perfetto 👌\n' +
+      `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al reparto *Officina* 🔧\n\n' +
-      'Le chiediamo gentilmente alcune informazioni per gestire al meglio la richiesta.'
+      'Le chiediamo gentilmente alcune informazioni per gestirla al meglio.'
     );
   }
 
   if (intent === 'noleggio') {
     return (
-      'Perfetto 👌\n' +
+      `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al reparto *Noleggio* 🚐\n\n' +
       'Le chiediamo gentilmente alcune informazioni per procedere.'
     );
@@ -152,7 +161,7 @@ function buildStartMessageByIntent(intent) {
 
   if (intent === 'vendita') {
     return (
-      'Perfetto 👌\n' +
+      `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al reparto *Vendita auto* 🚗\n\n' +
       'Le chiediamo gentilmente alcune informazioni per aiutarla al meglio.'
     );
@@ -160,19 +169,18 @@ function buildStartMessageByIntent(intent) {
 
   if (intent === 'trasporto') {
     return (
-      'Perfetto 👌\n' +
+      `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛\n\n' +
-      'Le chiediamo gentilmente alcune informazioni per organizzare la richiesta.'
+      'Le chiediamo gentilmente alcune informazioni per organizzarla.'
     );
   }
 
-  return '';
+  return `Salve ${customerName} 👋`;
 }
 
 function buildQuestions(intent) {
   if (intent === 'officina') {
     return [
-      'Può indicarci *nome e cognome*?',
       'Qual è il *modello del veicolo*?',
       'Può indicarci la *targa*?',
       'Qual è il *problema* oppure quale *intervento* desidera effettuare?',
@@ -183,7 +191,6 @@ function buildQuestions(intent) {
 
   if (intent === 'noleggio') {
     return [
-      'Può indicarci *nome e cognome*?',
       'Che *mezzo* le occorre?',
       'Qual è la *data di inizio* del noleggio?',
       'Qual è la *data di fine* del noleggio?',
@@ -193,7 +200,6 @@ function buildQuestions(intent) {
 
   if (intent === 'vendita') {
     return [
-      'Può indicarci *nome e cognome*?',
       'Che tipo di *auto* sta cercando?',
       'Qual è il suo *budget indicativo*?',
       'Ha una *permuta*? Se sì, ci indichi modello e anno.',
@@ -203,7 +209,6 @@ function buildQuestions(intent) {
 
   if (intent === 'trasporto') {
     return [
-      'Può indicarci *nome e cognome*?',
       'Qual è il *veicolo da trasportare*?',
       'Qual è il *luogo di ritiro*?',
       'Qual è il *luogo di consegna*?',
@@ -215,10 +220,12 @@ function buildQuestions(intent) {
   return [];
 }
 
-function buildCustomerConfirmation(intent) {
+function buildCustomerConfirmation(intent, profileName) {
+  const customerName = formatCustomerName(profileName);
+
   if (intent === 'officina') {
     return (
-      'La ringraziamo ✅\n\n' +
+      `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Officina* è stata registrata correttamente e inoltrata al nostro staff.\n' +
       'Sarà ricontattato il prima possibile.\n\n' +
       `Per prenotare direttamente può usare anche questo link:\n${LINK_OFFICINA}`
@@ -227,7 +234,7 @@ function buildCustomerConfirmation(intent) {
 
   if (intent === 'noleggio') {
     return (
-      'La ringraziamo ✅\n\n' +
+      `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.\n' +
       'Sarà ricontattato il prima possibile.\n\n' +
       `Per prenotare direttamente può usare anche questo link:\n${LINK_NOLEGGIO}`
@@ -236,7 +243,7 @@ function buildCustomerConfirmation(intent) {
 
   if (intent === 'vendita') {
     return (
-      'La ringraziamo ✅\n\n' +
+      `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Vendita auto* è stata registrata correttamente e inoltrata al nostro staff.\n' +
       'Sarà ricontattato il prima possibile.'
     );
@@ -244,14 +251,14 @@ function buildCustomerConfirmation(intent) {
 
   if (intent === 'trasporto') {
     return (
-      'La ringraziamo ✅\n\n' +
+      `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Trasporto veicoli* è stata registrata correttamente e inoltrata al nostro staff.\n' +
       'Sarà ricontattato il prima possibile.'
     );
   }
 
   return (
-    'La ringraziamo ✅\n\n' +
+    `La ringraziamo ${customerName} ✅\n\n` +
     'La sua richiesta è stata ricevuta correttamente.\n' +
     'Sarà ricontattato dal nostro staff il prima possibile.'
   );
@@ -275,64 +282,61 @@ function buildInternalMessage(session, incomingFrom, profileName) {
   const intent = session.intent;
   const reparto = getReparto(intent);
   const a = session.answers;
+  const customerName = formatCustomerName(profileName);
 
   if (intent === 'officina') {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
-      `👤 Cliente WhatsApp: ${profileName}\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
-      `Nome e cognome: ${a[0] || '-'}\n` +
-      `Modello veicolo: ${a[1] || '-'}\n` +
-      `Targa: ${a[2] || '-'}\n` +
-      `Problema / intervento: ${a[3] || '-'}\n` +
-      `Giorno preferito: ${a[4] || '-'}\n` +
-      `Telefono ricontatto: ${a[5] || '-'}`
+      `Modello veicolo: ${a[0] || '-'}\n` +
+      `Targa: ${a[1] || '-'}\n` +
+      `Problema / intervento: ${a[2] || '-'}\n` +
+      `Giorno preferito: ${a[3] || '-'}\n` +
+      `Telefono ricontatto: ${a[4] || '-'}`
     );
   }
 
   if (intent === 'noleggio') {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
-      `👤 Cliente WhatsApp: ${profileName}\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
-      `Nome e cognome: ${a[0] || '-'}\n` +
-      `Mezzo richiesto: ${a[1] || '-'}\n` +
-      `Data inizio: ${a[2] || '-'}\n` +
-      `Data fine: ${a[3] || '-'}\n` +
-      `Telefono ricontatto: ${a[4] || '-'}`
+      `Mezzo richiesto: ${a[0] || '-'}\n` +
+      `Data inizio: ${a[1] || '-'}\n` +
+      `Data fine: ${a[2] || '-'}\n` +
+      `Telefono ricontatto: ${a[3] || '-'}`
     );
   }
 
   if (intent === 'vendita') {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
-      `👤 Cliente WhatsApp: ${profileName}\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
-      `Nome e cognome: ${a[0] || '-'}\n` +
-      `Auto cercata: ${a[1] || '-'}\n` +
-      `Budget indicativo: ${a[2] || '-'}\n` +
-      `Permuta: ${a[3] || '-'}\n` +
-      `Telefono ricontatto: ${a[4] || '-'}`
+      `Auto cercata: ${a[0] || '-'}\n` +
+      `Budget indicativo: ${a[1] || '-'}\n` +
+      `Permuta: ${a[2] || '-'}\n` +
+      `Telefono ricontatto: ${a[3] || '-'}`
     );
   }
 
   if (intent === 'trasporto') {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
-      `👤 Cliente WhatsApp: ${profileName}\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
-      `Nome e cognome: ${a[0] || '-'}\n` +
-      `Veicolo da trasportare: ${a[1] || '-'}\n` +
-      `Luogo ritiro: ${a[2] || '-'}\n` +
-      `Luogo consegna: ${a[3] || '-'}\n` +
-      `Quando serve: ${a[4] || '-'}\n` +
-      `Telefono ricontatto: ${a[5] || '-'}`
+      `Veicolo da trasportare: ${a[0] || '-'}\n` +
+      `Luogo ritiro: ${a[1] || '-'}\n` +
+      `Luogo consegna: ${a[2] || '-'}\n` +
+      `Quando serve: ${a[3] || '-'}\n` +
+      `Telefono ricontatto: ${a[4] || '-'}`
     );
   }
 
   return (
     `🔔 NUOVA RICHIESTA GENERICA\n\n` +
-    `👤 Cliente WhatsApp: ${profileName}\n` +
+    `👤 Nome WhatsApp: ${customerName}\n` +
     `📞 Numero WhatsApp: ${incomingFrom}`
   );
 }
@@ -408,21 +412,18 @@ app.post('/whatsapp', async (req, res) => {
       session = null;
     }
 
-    // COMANDI UTILI
     if (normalize(incomingText) === 'reset' || normalize(incomingText) === 'menu') {
       resetSession(incomingFrom);
-      twiml.message(buildWelcomeMenu());
+      twiml.message(buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    // NUOVO CLIENTE / NUOVA SESSIONE
     if (!session) {
       session = createSession(incomingFrom, profileName);
 
       const detectedIntent = detectIntent(incomingText);
 
-      // riconoscimento automatico del servizio
       if (detectedIntent !== 'generico') {
         session.intent = detectedIntent;
         session.questions = buildQuestions(detectedIntent);
@@ -430,20 +431,19 @@ app.post('/whatsapp', async (req, res) => {
         session.questionIndex = 0;
 
         const firstMessage =
-          buildStartMessageByIntent(detectedIntent) +
+          buildStartMessageByIntent(detectedIntent, profileName) +
           '\n\n' +
           session.questions[0];
 
         twiml.message(firstMessage);
       } else {
-        twiml.message(buildWelcomeMenu());
+        twiml.message(buildWelcomeMenu(profileName));
       }
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    // STATO MENU
     if (session.state === 'menu') {
       const chosenIntent = intentFromMenuChoice(incomingText);
 
@@ -459,7 +459,7 @@ app.post('/whatsapp', async (req, res) => {
       session.questionIndex = 0;
 
       const message =
-        buildStartMessageByIntent(chosenIntent) +
+        buildStartMessageByIntent(chosenIntent, profileName) +
         '\n\n' +
         session.questions[0];
 
@@ -468,7 +468,6 @@ app.post('/whatsapp', async (req, res) => {
       return res.end(twiml.toString());
     }
 
-    // STATO DOMANDE
     if (session.state === 'questions') {
       session.answers.push(incomingText);
       session.questionIndex += 1;
@@ -488,7 +487,7 @@ app.post('/whatsapp', async (req, res) => {
       const recipients = getRecipients(session.intent);
       await sendInternalNotification(recipients, internalMessage);
 
-      twiml.message(buildCustomerConfirmation(session.intent));
+      twiml.message(buildCustomerConfirmation(session.intent, profileName));
       resetSession(incomingFrom);
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -496,7 +495,7 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     resetSession(incomingFrom);
-    twiml.message(buildWelcomeMenu());
+    twiml.message(buildWelcomeMenu(profileName));
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());
   } catch (error) {

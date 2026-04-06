@@ -44,6 +44,10 @@ function formatCustomerName(profileName) {
   return name || 'Cliente';
 }
 
+function formatWhatsappNumber(number) {
+  return cleanText(number) || '-';
+}
+
 function detectIntent(text) {
   const msg = normalize(text);
 
@@ -181,7 +185,7 @@ function buildStartMessageByIntent(intent, profileName) {
   if (intent === 'officina') {
     return (
       `Salve ${customerName} 👋\n\n` +
-      'La sua richiesta è stata indirizzata al reparto *Officina* 🔧\n\n' +
+      'La sua richiesta è stata indirizzata al reparto *Officina* 🔧.\n\n' +
       'Le chiediamo gentilmente alcune informazioni per gestirla al meglio.'
     );
   }
@@ -189,7 +193,7 @@ function buildStartMessageByIntent(intent, profileName) {
   if (intent === 'noleggio') {
     return (
       `Salve ${customerName} 👋\n\n` +
-      'La sua richiesta è stata indirizzata al reparto *Noleggio* 🚐\n\n' +
+      'La sua richiesta è stata indirizzata al reparto *Noleggio* 🚐.\n\n' +
       'Le chiediamo gentilmente alcune informazioni per procedere.'
     );
   }
@@ -197,7 +201,7 @@ function buildStartMessageByIntent(intent, profileName) {
   if (intent === 'vendita') {
     return (
       `Salve ${customerName} 👋\n\n` +
-      'La sua richiesta è stata indirizzata al reparto *Vendita auto* 🚗\n\n' +
+      'La sua richiesta è stata indirizzata al reparto *Vendita auto* 🚗.\n\n' +
       'Le chiediamo gentilmente alcune informazioni per aiutarla al meglio.'
     );
   }
@@ -205,7 +209,7 @@ function buildStartMessageByIntent(intent, profileName) {
   if (intent === 'trasporto') {
     return (
       `Salve ${customerName} 👋\n\n` +
-      'La sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛\n\n' +
+      'La sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛.\n\n' +
       'Le chiediamo gentilmente alcune informazioni per organizzarla.'
     );
   }
@@ -213,7 +217,7 @@ function buildStartMessageByIntent(intent, profileName) {
   if (intent === 'contatto_diretto') {
     return (
       `Salve ${customerName} 👋\n\n` +
-      'La sua richiesta è stata indirizzata a un *responsabile* 📞\n\n' +
+      'La sua richiesta è stata indirizzata a un *responsabile* 📞.\n\n' +
       'Le chiediamo gentilmente alcune informazioni per poterla ricontattare al più presto.'
     );
   }
@@ -227,8 +231,7 @@ function buildQuestions(intent) {
       'Qual è il *modello del veicolo*?',
       'Può indicarci la *targa*?',
       'Qual è il *problema* oppure quale *intervento* desidera effettuare?',
-      'Ha un *giorno preferito* per l’appuntamento?',
-      'Può lasciarci un *numero di telefono* per il ricontatto?'
+      'Ha un *giorno preferito* per l’appuntamento?'
     ];
   }
 
@@ -236,8 +239,7 @@ function buildQuestions(intent) {
     return [
       'Che *mezzo* le occorre?',
       'Qual è la *data di inizio* del noleggio?',
-      'Qual è la *data di fine* del noleggio?',
-      'Può lasciarci un *numero di telefono* per il ricontatto?'
+      'Qual è la *data di fine* del noleggio?'
     ];
   }
 
@@ -245,8 +247,7 @@ function buildQuestions(intent) {
     return [
       'Che tipo di *auto* sta cercando?',
       'Qual è il suo *budget indicativo*?',
-      'Ha una *permuta*? Se sì, ci indichi modello e anno.',
-      'Può lasciarci un *numero di telefono* per il ricontatto?'
+      'Ha una *permuta*? Se sì, ci indichi modello e anno.'
     ];
   }
 
@@ -255,15 +256,13 @@ function buildQuestions(intent) {
       'Qual è il *veicolo da trasportare*?',
       'Qual è il *luogo di ritiro*?',
       'Qual è il *luogo di consegna*?',
-      'Entro quando sarebbe necessario il *trasporto*?',
-      'Può lasciarci un *numero di telefono* per il ricontatto?'
+      'Entro quando sarebbe necessario il *trasporto*?'
     ];
   }
 
   if (intent === 'contatto_diretto') {
     return [
-      'Può indicarci brevemente il *motivo della richiesta*?',
-      'Può lasciarci un *numero di telefono* per il ricontatto?'
+      'Può indicarci brevemente il *motivo della richiesta*?'
     ];
   }
 
@@ -277,7 +276,7 @@ function buildCustomerConfirmation(intent, profileName) {
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Officina* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato il prima possibile.\n\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
       `Per prenotare direttamente può usare anche questo link:\n${LINK_OFFICINA}`
     );
   }
@@ -286,7 +285,7 @@ function buildCustomerConfirmation(intent, profileName) {
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato il prima possibile.\n\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
       `Per prenotare direttamente può usare anche questo link:\n${LINK_NOLEGGIO}`
     );
   }
@@ -295,7 +294,7 @@ function buildCustomerConfirmation(intent, profileName) {
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Vendita auto* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato il prima possibile.'
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
@@ -303,7 +302,7 @@ function buildCustomerConfirmation(intent, profileName) {
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta per il reparto *Trasporto veicoli* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato il prima possibile.'
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
@@ -311,14 +310,14 @@ function buildCustomerConfirmation(intent, profileName) {
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
       'La sua richiesta è stata inoltrata a un nostro *responsabile*.\n' +
-      'Sarà ricontattato il prima possibile.'
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
   return (
     `La ringraziamo ${customerName} ✅\n\n` +
     'La sua richiesta è stata ricevuta correttamente.\n' +
-    'Sarà ricontattato dal nostro staff il prima possibile.'
+    'Sarà ricontattato dal nostro staff al più presto.'
   );
 }
 
@@ -342,17 +341,17 @@ function buildInternalMessage(session, incomingFrom, profileName) {
   const reparto = getReparto(intent);
   const a = session.answers;
   const customerName = formatCustomerName(profileName);
+  const whatsappNumber = formatWhatsappNumber(incomingFrom);
 
   if (intent === 'officina') {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Modello veicolo: ${a[0] || '-'}\n` +
       `Targa: ${a[1] || '-'}\n` +
       `Problema / intervento: ${a[2] || '-'}\n` +
-      `Giorno preferito: ${a[3] || '-'}\n` +
-      `Telefono ricontatto: ${a[4] || '-'}`
+      `Giorno preferito: ${a[3] || '-'}`
     );
   }
 
@@ -360,11 +359,10 @@ function buildInternalMessage(session, incomingFrom, profileName) {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Mezzo richiesto: ${a[0] || '-'}\n` +
       `Data inizio: ${a[1] || '-'}\n` +
-      `Data fine: ${a[2] || '-'}\n` +
-      `Telefono ricontatto: ${a[3] || '-'}`
+      `Data fine: ${a[2] || '-'}`
     );
   }
 
@@ -372,11 +370,10 @@ function buildInternalMessage(session, incomingFrom, profileName) {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Auto cercata: ${a[0] || '-'}\n` +
       `Budget indicativo: ${a[1] || '-'}\n` +
-      `Permuta: ${a[2] || '-'}\n` +
-      `Telefono ricontatto: ${a[3] || '-'}`
+      `Permuta: ${a[2] || '-'}`
     );
   }
 
@@ -384,12 +381,11 @@ function buildInternalMessage(session, incomingFrom, profileName) {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Veicolo da trasportare: ${a[0] || '-'}\n` +
       `Luogo ritiro: ${a[1] || '-'}\n` +
       `Luogo consegna: ${a[2] || '-'}\n` +
-      `Quando serve: ${a[3] || '-'}\n` +
-      `Telefono ricontatto: ${a[4] || '-'}`
+      `Quando serve: ${a[3] || '-'}`
     );
   }
 
@@ -397,16 +393,15 @@ function buildInternalMessage(session, incomingFrom, profileName) {
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
-      `Motivo richiesta: ${a[0] || '-'}\n` +
-      `Telefono ricontatto: ${a[1] || '-'}`
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Motivo richiesta: ${a[0] || '-'}`
     );
   }
 
   return (
     `🔔 NUOVA RICHIESTA GENERICA\n\n` +
     `👤 Nome WhatsApp: ${customerName}\n` +
-    `📞 Numero WhatsApp: ${incomingFrom}`
+    `📞 Numero WhatsApp cliente: ${whatsappNumber}`
   );
 }
 

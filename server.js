@@ -118,6 +118,18 @@ function detectIntent(text) {
     return 'trasporto';
   }
 
+  if (
+    msg.includes('parcheggio') ||
+    msg.includes('sosta') ||
+    msg.includes('posto camper') ||
+    msg.includes('posto auto') ||
+    msg.includes('area sosta') ||
+    msg.includes('camper stop') ||
+    msg.includes('sosta camper')
+  ) {
+    return 'parcheggio_sosta';
+  }
+
   return 'generico';
 }
 
@@ -129,6 +141,7 @@ function intentFromMenuChoice(text) {
   if (msg === '3') return 'vendita';
   if (msg === '4') return 'trasporto';
   if (msg === '5') return 'contatto_diretto';
+  if (msg === '6') return 'parcheggio_sosta';
 
   const detected = detectIntent(msg);
   return detected !== 'generico' ? detected : null;
@@ -137,15 +150,6 @@ function intentFromMenuChoice(text) {
 function getRecipients(intent) {
   if (intent === 'officina') {
     return OFFICINA_NUMBERS;
-  }
-
-  if (
-    intent === 'noleggio' ||
-    intent === 'vendita' ||
-    intent === 'trasporto' ||
-    intent === 'contatto_diretto'
-  ) {
-    return GENERAL_NUMBERS;
   }
 
   return GENERAL_NUMBERS;
@@ -157,6 +161,7 @@ function getReparto(intent) {
   if (intent === 'vendita') return 'VENDITA';
   if (intent === 'trasporto') return 'TRASPORTO';
   if (intent === 'contatto_diretto') return 'CONTATTO DIRETTO';
+  if (intent === 'parcheggio_sosta') return 'PARCHEGGIO / SOSTA';
   return 'GENERICO';
 }
 
@@ -174,7 +179,8 @@ function buildWelcomeMenu(profileName) {
     '2️⃣ *Noleggio* 🚐\n' +
     '3️⃣ *Vendita auto* 🚗\n' +
     '4️⃣ *Trasporto veicoli* 🚛\n' +
-    '5️⃣ *Contatto diretto / Responsabile* 📞\n\n' +
+    '5️⃣ *Contatto diretto / Responsabile* 📞\n' +
+    '6️⃣ *Parcheggio / Sosta* 🅿️\n\n' +
     'In alternativa, può anche scrivere direttamente la sua richiesta.'
   );
 }
@@ -222,6 +228,14 @@ function buildStartMessageByIntent(intent, profileName) {
     );
   }
 
+  if (intent === 'parcheggio_sosta') {
+    return (
+      `Salve ${customerName} 👋\n\n` +
+      'La sua richiesta è stata indirizzata al servizio *Parcheggio / Sosta* 🅿️.\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per verificare disponibilità e servizi.'
+    );
+  }
+
   return `Salve ${customerName} 👋`;
 }
 
@@ -263,6 +277,16 @@ function buildQuestions(intent) {
   if (intent === 'contatto_diretto') {
     return [
       'Può indicarci brevemente il *motivo della richiesta*?'
+    ];
+  }
+
+  if (intent === 'parcheggio_sosta') {
+    return [
+      'Qual è il *tipo di mezzo*? (es. auto, furgone, camper, carrello, altro)',
+      'Qual è la *data di arrivo*?',
+      'Per quanti *giorni di sosta* ha bisogno?',
+      'Ha bisogno di *corrente*? (sì / no)',
+      'Ha bisogno di *acqua*? (sì / no)'
     ];
   }
 
@@ -314,6 +338,15 @@ function buildCustomerConfirmation(intent, profileName) {
     );
   }
 
+  if (intent === 'parcheggio_sosta') {
+    return (
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il servizio *Parcheggio / Sosta* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
+      'Se desidera, in un secondo momento potremo anche inviarle un *link di pagamento* per confermare la prenotazione.'
+    );
+  }
+
   return (
     `La ringraziamo ${customerName} ✅\n\n` +
     'La sua richiesta è stata ricevuta correttamente.\n' +
@@ -329,7 +362,8 @@ function buildInvalidChoiceMessage() {
     '2️⃣ per *Noleggio* 🚐\n' +
     '3️⃣ per *Vendita auto* 🚗\n' +
     '4️⃣ per *Trasporto veicoli* 🚛\n' +
-    '5️⃣ per *Contatto diretto / Responsabile* 📞'
+    '5️⃣ per *Contatto diretto / Responsabile* 📞\n' +
+    '6️⃣ per *Parcheggio / Sosta* 🅿️'
   );
 }
 
@@ -395,6 +429,19 @@ function buildInternalMessage(session, incomingFrom, profileName) {
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Motivo richiesta: ${a[0] || '-'}`
+    );
+  }
+
+  if (intent === 'parcheggio_sosta') {
+    return (
+      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Tipo di mezzo: ${a[0] || '-'}\n` +
+      `Data arrivo: ${a[1] || '-'}\n` +
+      `Giorni di sosta: ${a[2] || '-'}\n` +
+      `Corrente richiesta: ${a[3] || '-'}\n` +
+      `Acqua richiesta: ${a[4] || '-'}`
     );
   }
 

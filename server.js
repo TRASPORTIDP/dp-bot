@@ -48,6 +48,27 @@ function detectIntent(text) {
   const msg = normalize(text);
 
   if (
+    msg.includes('titolare') ||
+    msg.includes('responsabile') ||
+    msg.includes('operatore') ||
+    msg.includes('contatto diretto') ||
+    msg.includes('parlare con qualcuno') ||
+    msg.includes('parlare con una persona') ||
+    msg.includes('parlare con il titolare') ||
+    msg.includes('parlare con un responsabile') ||
+    msg.includes('parlare con un operatore') ||
+    msg.includes('essere ricontattato') ||
+    msg.includes('farmi chiamare') ||
+    msg.includes('mi richiama') ||
+    msg.includes('richiamare') ||
+    msg.includes('richiesta particolare') ||
+    msg.includes('vorrei parlare con') ||
+    msg.includes('voglio parlare con')
+  ) {
+    return 'contatto_diretto';
+  }
+
+  if (
     msg.includes('officina') ||
     msg.includes('tagliando') ||
     msg.includes('riparazione') ||
@@ -103,14 +124,26 @@ function intentFromMenuChoice(text) {
   if (msg === '2') return 'noleggio';
   if (msg === '3') return 'vendita';
   if (msg === '4') return 'trasporto';
+  if (msg === '5') return 'contatto_diretto';
 
-  return detectIntent(msg) !== 'generico' ? detectIntent(msg) : null;
+  const detected = detectIntent(msg);
+  return detected !== 'generico' ? detected : null;
 }
 
 function getRecipients(intent) {
   if (intent === 'officina') {
     return OFFICINA_NUMBERS;
   }
+
+  if (
+    intent === 'noleggio' ||
+    intent === 'vendita' ||
+    intent === 'trasporto' ||
+    intent === 'contatto_diretto'
+  ) {
+    return GENERAL_NUMBERS;
+  }
+
   return GENERAL_NUMBERS;
 }
 
@@ -119,6 +152,7 @@ function getReparto(intent) {
   if (intent === 'noleggio') return 'NOLEGGIO';
   if (intent === 'vendita') return 'VENDITA';
   if (intent === 'trasporto') return 'TRASPORTO';
+  if (intent === 'contatto_diretto') return 'CONTATTO DIRETTO';
   return 'GENERICO';
 }
 
@@ -135,7 +169,8 @@ function buildWelcomeMenu(profileName) {
     '1️⃣ *Officina* 🔧\n' +
     '2️⃣ *Noleggio* 🚐\n' +
     '3️⃣ *Vendita auto* 🚗\n' +
-    '4️⃣ *Trasporto veicoli* 🚛\n\n' +
+    '4️⃣ *Trasporto veicoli* 🚛\n' +
+    '5️⃣ *Contatto diretto / Responsabile* 📞\n\n' +
     'In alternativa, può anche scrivere direttamente la sua richiesta.'
   );
 }
@@ -172,6 +207,14 @@ function buildStartMessageByIntent(intent, profileName) {
       `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛\n\n' +
       'Le chiediamo gentilmente alcune informazioni per organizzarla.'
+    );
+  }
+
+  if (intent === 'contatto_diretto') {
+    return (
+      `Salve ${customerName} 👋\n\n` +
+      'La sua richiesta è stata indirizzata a un *responsabile* 📞\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per poterla ricontattare al più presto.'
     );
   }
 
@@ -217,6 +260,13 @@ function buildQuestions(intent) {
     ];
   }
 
+  if (intent === 'contatto_diretto') {
+    return [
+      'Può indicarci brevemente il *motivo della richiesta*?',
+      'Può lasciarci un *numero di telefono* per il ricontatto?'
+    ];
+  }
+
   return [];
 }
 
@@ -257,6 +307,14 @@ function buildCustomerConfirmation(intent, profileName) {
     );
   }
 
+  if (intent === 'contatto_diretto') {
+    return (
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta è stata inoltrata a un nostro *responsabile*.\n' +
+      'Sarà ricontattato il prima possibile.'
+    );
+  }
+
   return (
     `La ringraziamo ${customerName} ✅\n\n` +
     'La sua richiesta è stata ricevuta correttamente.\n' +
@@ -271,7 +329,8 @@ function buildInvalidChoiceMessage() {
     '1️⃣ per *Officina* 🔧\n' +
     '2️⃣ per *Noleggio* 🚐\n' +
     '3️⃣ per *Vendita auto* 🚗\n' +
-    '4️⃣ per *Trasporto veicoli* 🚛'
+    '4️⃣ per *Trasporto veicoli* 🚛\n' +
+    '5️⃣ per *Contatto diretto / Responsabile* 📞'
   );
 }
 
@@ -331,6 +390,16 @@ function buildInternalMessage(session, incomingFrom, profileName) {
       `Luogo consegna: ${a[2] || '-'}\n` +
       `Quando serve: ${a[3] || '-'}\n` +
       `Telefono ricontatto: ${a[4] || '-'}`
+    );
+  }
+
+  if (intent === 'contatto_diretto') {
+    return (
+      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `👤 Nome WhatsApp: ${customerName}\n` +
+      `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
+      `Motivo richiesta: ${a[0] || '-'}\n` +
+      `Telefono ricontatto: ${a[1] || '-'}`
     );
   }
 

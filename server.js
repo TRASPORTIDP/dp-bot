@@ -32,58 +32,170 @@ const LINK_OFFICINA =
 const LINK_NOLEGGIO =
   'https://calendly.com/contabilita-trasportidp/noleggio-dp';
 
+// memoria temporanea conversazioni
+const sessions = {};
+
 function detectIntent(text) {
   const msg = (text || '').toLowerCase();
 
-  if (msg.includes('officina') || msg.includes('tagliando') || msg.includes('riparazione')) {
+  if (
+    msg.includes('officina') ||
+    msg.includes('tagliando') ||
+    msg.includes('riparazione') ||
+    msg.includes('guasto') ||
+    msg.includes('meccanico')
+  ) {
     return 'officina';
   }
-  if (msg.includes('noleggio') || msg.includes('furgone') || msg.includes('auto a noleggio')) {
+
+  if (
+    msg.includes('noleggio') ||
+    msg.includes('furgone') ||
+    msg.includes('auto a noleggio')
+  ) {
     return 'noleggio';
   }
-  if (msg.includes('vendita') || msg.includes('auto usata') || msg.includes('comprare auto')) {
+
+  if (
+    msg.includes('vendita') ||
+    msg.includes('auto usata') ||
+    msg.includes('comprare auto')
+  ) {
     return 'vendita';
   }
-  if (msg.includes('trasporto') || msg.includes('bisarca')) {
+
+  if (
+    msg.includes('trasporto') ||
+    msg.includes('bisarca')
+  ) {
     return 'trasporto';
   }
 
   return 'generico';
 }
 
-async function createAiReply({ customerName, incomingText, intent }) {
-  let extra = '';
-
+function getRecipientsByIntent(intent) {
   if (intent === 'officina') {
-    extra = `Il cliente chiede officina. Rispondi in modo professionale e breve. Inserisci anche questo link: ${LINK_OFFICINA}`;
-  } else if (intent === 'noleggio') {
-    extra = `Il cliente chiede noleggio. Rispondi in modo professionale e breve. Inserisci anche questo link: ${LINK_NOLEGGIO}`;
-  } else if (intent === 'vendita') {
-    extra = `Il cliente chiede vendita auto. Rispondi in modo professionale e breve.`;
-  } else if (intent === 'trasporto') {
-    extra = `Il cliente chiede trasporto auto. Rispondi in modo professionale e breve.`;
-  } else {
-    extra = `Il cliente ha scritto un messaggio generico. Chiedi gentilmente di specificare: Officina, Noleggio, Vendita o Trasporto.`;
+    return OFFICINA_NUMBERS;
+  }
+  return GENERAL_NUMBERS;
+}
+
+function getRepartoName(intent) {
+  if (intent === 'officina') return 'OFFICINA';
+  if (intent === 'noleggio') return 'NOLEGGIO';
+  if (intent === 'vendita') return 'VENDITA';
+  if (intent === 'trasporto') return 'TRASPORTO';
+  return 'GENERICO';
+}
+
+function getInfoRequestByIntent(intent) {
+  if (intent === 'officina') {
+    return (
+      'Ciao 👋 grazie per aver contattato Trasporti DP.\n\n' +
+      'Per l’officina, inviaci gentilmente in un solo messaggio:\n' +
+      '• Nome e cognome\n' +
+      '• Modello auto\n' +
+      '• Targa\n' +
+      '• Problema o intervento richiesto\n' +
+      '• Giorno preferito\n' +
+      '• Numero di telefono\n\n' +
+      `Per prenotare direttamente puoi usare anche questo link:\n${LINK_OFFICINA}`
+    );
   }
 
-  const completion = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
-    temperature: 0.5,
-    messages: [
-      {
-        role: 'system',
-        content:
-          'Sei l’assistente WhatsApp di Trasporti DP. Rispondi sempre in italiano, in modo cordiale, professionale, breve e chiaro. Non mostrare mai numeri interni.'
-      },
-      {
-        role: 'user',
-        content: `Cliente: ${customerName}\nMessaggio: ${incomingText}\nIstruzioni: ${extra}`
-      }
-    ]
-  });
+  if (intent === 'noleggio') {
+    return (
+      'Ciao 👋 grazie per aver contattato Trasporti DP.\n\n' +
+      'Per il noleggio, inviaci gentilmente in un solo messaggio:\n' +
+      '• Nome e cognome\n' +
+      '• Mezzo richiesto\n' +
+      '• Data inizio\n' +
+      '• Data fine\n' +
+      '• Numero di telefono\n\n' +
+      `Per prenotare direttamente puoi usare anche questo link:\n${LINK_NOLEGGIO}`
+    );
+  }
 
-  return completion.choices?.[0]?.message?.content?.trim()
-    || 'Ciao 👋 abbiamo ricevuto la tua richiesta. Ti ricontatteremo a breve.';
+  if (intent === 'vendita') {
+    return (
+      'Ciao 👋 grazie per aver contattato Trasporti DP.\n\n' +
+      'Per la vendita auto, inviaci gentilmente in un solo messaggio:\n' +
+      '• Nome e cognome\n' +
+      '• Tipo di auto desiderata\n' +
+      '• Budget indicativo\n' +
+      '• Eventuale permuta\n' +
+      '• Numero di telefono'
+    );
+  }
+
+  if (intent === 'trasporto') {
+    return (
+      'Ciao 👋 grazie per aver contattato Trasporti DP.\n\n' +
+      'Per il trasporto auto, inviaci gentilmente in un solo messaggio:\n' +
+      '• Nome e cognome\n' +
+      '• Tipo veicolo\n' +
+      '• Luogo di ritiro\n' +
+      '• Luogo di consegna\n' +
+      '• Tempistiche richieste\n' +
+      '• Numero di telefono'
+    );
+  }
+
+  return (
+    'Ciao 👋 grazie per aver contattato Trasporti DP.\n\n' +
+    'Per aiutarti più velocemente, scrivici in un solo messaggio:\n' +
+    '• Servizio richiesto (Officina / Noleggio / Vendita / Trasporto)\n' +
+    '• Nome e cognome\n' +
+    '• Numero di telefono\n' +
+    '• Dettagli della richiesta'
+  );
+}
+
+async function createConfirmationReply({ intent }) {
+  let instruction = '';
+
+  if (intent === 'officina') {
+    instruction =
+      'Conferma in modo professionale che i dati sono stati ricevuti e inoltrati al reparto officina. Tono cordiale, breve e chiaro.';
+  } else if (intent === 'noleggio') {
+    instruction =
+      'Conferma in modo professionale che i dati sono stati ricevuti e inoltrati al reparto noleggio. Tono cordiale, breve e chiaro.';
+  } else if (intent === 'vendita') {
+    instruction =
+      'Conferma in modo professionale che i dati sono stati ricevuti e inoltrati al reparto vendita. Tono cordiale, breve e chiaro.';
+  } else if (intent === 'trasporto') {
+    instruction =
+      'Conferma in modo professionale che i dati sono stati ricevuti e inoltrati al reparto trasporto. Tono cordiale, breve e chiaro.';
+  } else {
+    instruction =
+      'Conferma in modo professionale che i dati sono stati ricevuti e verranno verificati dal team. Tono cordiale, breve e chiaro.';
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.4,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Sei l’assistente WhatsApp di Trasporti DP. Rispondi sempre in italiano, in modo cordiale, professionale, breve e chiaro.'
+        },
+        {
+          role: 'user',
+          content: instruction
+        }
+      ]
+    });
+
+    return (
+      completion.choices?.[0]?.message?.content?.trim() ||
+      'Grazie 👍 abbiamo ricevuto i tuoi dati e li abbiamo inoltrati al reparto competente. Ti ricontatteremo al più presto.'
+    );
+  } catch (error) {
+    return 'Grazie 👍 abbiamo ricevuto i tuoi dati e li abbiamo inoltrati al reparto competente. Ti ricontatteremo al più presto.';
+  }
 }
 
 async function sendInternalNotification(numbers, text) {
@@ -113,47 +225,57 @@ app.post('/whatsapp', async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
 
   try {
-    const intent = detectIntent(incomingText);
-
-    const aiReply = await createAiReply({
-      customerName: profileName,
-      incomingText,
-      intent
-    });
-
-    let internalRecipients = GENERAL_NUMBERS;
-    let reparto = 'GENERICO';
-
-    if (intent === 'officina') {
-      internalRecipients = OFFICINA_NUMBERS;
-      reparto = 'OFFICINA';
-    } else if (intent === 'noleggio') {
-      internalRecipients = GENERAL_NUMBERS;
-      reparto = 'NOLEGGIO';
-    } else if (intent === 'vendita') {
-      internalRecipients = GENERAL_NUMBERS;
-      reparto = 'VENDITA';
-    } else if (intent === 'trasporto') {
-      internalRecipients = GENERAL_NUMBERS;
-      reparto = 'TRASPORTO';
+    if (!incomingText) {
+      twiml.message('Ciao 👋 scrivici pure la tua richiesta e ti aiuteremo il prima possibile.');
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
     }
+
+    if (!sessions[incomingFrom]) {
+      const intent = detectIntent(incomingText);
+
+      sessions[incomingFrom] = {
+        step: 'waiting_details',
+        intent: intent,
+        firstMessage: incomingText,
+        customerName: profileName,
+        createdAt: Date.now()
+      };
+
+      const infoRequest = getInfoRequestByIntent(intent);
+
+      twiml.message(infoRequest);
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
+    }
+
+    const session = sessions[incomingFrom];
+    const intent = session.intent;
+    const reparto = getRepartoName(intent);
+    const internalRecipients = getRecipientsByIntent(intent);
 
     const internalText =
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Cliente: ${profileName}\n` +
-      `📞 Numero: ${incomingFrom}\n` +
-      `💬 Messaggio: ${incomingText}`;
+      `📞 Numero: ${incomingFrom}\n\n` +
+      `💬 Primo messaggio:\n${session.firstMessage}\n\n` +
+      `📝 Dati inviati dal cliente:\n${incomingText}`;
 
     await sendInternalNotification(internalRecipients, internalText);
 
-    twiml.message(aiReply);
+    const confirmationReply = await createConfirmationReply({ intent });
+
+    twiml.message(confirmationReply);
+
+    delete sessions[incomingFrom];
+
     res.writeHead(200, { 'Content-Type': 'text/xml' });
-    res.end(twiml.toString());
+    return res.end(twiml.toString());
   } catch (error) {
     console.error('Errore generale:', error.message);
     twiml.message('Ciao 👋 abbiamo ricevuto il tuo messaggio. Ti ricontatteremo al più presto.');
     res.writeHead(200, { 'Content-Type': 'text/xml' });
-    res.end(twiml.toString());
+    return res.end(twiml.toString());
   }
 });
 

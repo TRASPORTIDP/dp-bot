@@ -22,90 +22,12 @@ const GENERAL_NUMBERS = [
   'whatsapp:+393494040073'
 ];
 
-// FILE SESSIONI
-const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
+// SESSIONI SU FILE, UNA PER NUMERO
+const SESSIONS_DIR = path.join(__dirname, 'sessions');
 const SESSION_TIMEOUT_MS = 1000 * 60 * 60 * 6; // 6 ore
 
-// ----------------------
-// SESSIONI
-// ----------------------
-function loadSessions() {
-  try {
-    if (!fs.existsSync(SESSIONS_FILE)) return {};
-    const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
-    return raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    console.error('Errore caricamento sessioni:', error.message);
-    return {};
-  }
-}
-
-function saveSessions(sessions) {
-  try {
-    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8');
-  } catch (error) {
-    console.error('Errore salvataggio sessioni:', error.message);
-  }
-}
-
-let sessions = loadSessions();
-
-function cleanupSessions() {
-  const now = Date.now();
-  let changed = false;
-
-  for (const key of Object.keys(sessions)) {
-    if (!sessions[key]?.updatedAt || now - sessions[key].updatedAt > SESSION_TIMEOUT_MS) {
-      delete sessions[key];
-      changed = true;
-    }
-  }
-
-  if (changed) saveSessions(sessions);
-}
-
-setInterval(cleanupSessions, 10 * 60 * 1000);
-
-function getSession(from, profileName = 'Cliente') {
-  cleanupSessions();
-
-  if (!sessions[from]) {
-    sessions[from] = {
-      from,
-      profileName,
-      flow: null,
-      step: null,
-      data: {},
-      updatedAt: Date.now()
-    };
-    saveSessions(sessions);
-  }
-
-  sessions[from].profileName = profileName || sessions[from].profileName || 'Cliente';
-  sessions[from].updatedAt = Date.now();
-  saveSessions(sessions);
-
-  return sessions[from];
-}
-
-function resetSession(from) {
-  delete sessions[from];
-  saveSessions(sessions);
-}
-
-function setFlow(session, flow, firstStep) {
-  session.flow = flow;
-  session.step = firstStep;
-  session.data = {};
-  session.updatedAt = Date.now();
-  sessions[session.from] = session;
-  saveSessions(sessions);
-}
-
-function updateSession(session) {
-  session.updatedAt = Date.now();
-  sessions[session.from] = session;
-  saveSessions(sessions);
+if (!fs.existsSync(SESSIONS_DIR)) {
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
 // ----------------------
@@ -117,14 +39,18 @@ function normalizeText(text) {
 
 function mainMenu() {
   return (
-    "Ciao 👋 benvenuto in DP\n\n" +
-    "Seleziona il servizio:\n" +
+    "Ciao 👋 Benvenuto in DP.\n\n" +
+    "Per aiutarti più velocemente, scegli il servizio che ti interessa:\n\n" +
     "🔧 Officina\n" +
     "🚐 Noleggio\n" +
-    "🚗 Vendita\n" +
-    "🚛 Trasporto\n\n" +
-    "Scrivi il servizio che ti interessa."
+    "🚗 Vendita Auto\n" +
+    "🚛 Trasporto Auto\n\n" +
+    "Scrivi pure il servizio che ti serve."
   );
+}
+
+function restartHint() {
+  return "\n\nPer ricominciare in qualsiasi momento scrivi MENU.";
 }
 
 function detectIntent(text) {
@@ -137,36 +63,28 @@ function detectIntent(text) {
     msg.includes('diagnosi') ||
     msg.includes('riparazione') ||
     msg.includes('meccanico')
-  ) {
-    return 'officina';
-  }
+  ) return 'officina';
 
   if (
     msg.includes('noleggio') ||
     msg.includes('affitto') ||
     msg.includes('furgone') ||
     msg.includes('auto a noleggio')
-  ) {
-    return 'noleggio';
-  }
+  ) return 'noleggio';
 
   if (
     msg.includes('vendita') ||
     msg.includes('comprare') ||
     msg.includes('acquistare') ||
     msg.includes('auto usata')
-  ) {
-    return 'vendita';
-  }
+  ) return 'vendita';
 
   if (
     msg.includes('trasporto') ||
     msg.includes('bisarca') ||
     msg.includes('ritiro auto') ||
     msg.includes('consegna auto')
-  ) {
-    return 'trasporto';
-  }
+  ) return 'trasporto';
 
   return 'generico';
 }
@@ -174,6 +92,97 @@ function detectIntent(text) {
 function getRecipientsByFlow(flow) {
   if (flow === 'officina') return OFFICINA_NUMBERS;
   return GENERAL_NUMBERS;
+}
+
+function sanitizeKey(from) {
+  return String(from || '')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .replace(/_+/g, '_');
+}
+
+function getSessionFile(from) {
+  return path.join(SESSIONS_DIR, `${sanitizeKey(from)}.json`);
+}
+
+// ----------------------
+// SESSIONI
+// ----------------------
+function loadSession(from) {
+  try {
+    const file = getSessionFile(from);
+    if (!fs.existsSync(file)) return null;
+
+    const raw = fs.readFileSync(file, 'utf8');
+    if (!raw) return null;
+
+    const session = JSON.parse(raw);
+
+    if (!session.updatedAt || Date.now() - session.updatedAt > SESSION_TIMEOUT_MS) {
+      fs.unlinkSync(file);
+      return null;
+    }
+
+    return session;
+  } catch (error) {
+    console.error('Errore loadSession:', error.message);
+    return null;
+  }
+}
+
+function saveSession(session) {
+  try {
+    const file = getSessionFile(session.from);
+    session.updatedAt = Date.now();
+    fs.writeFileSync(file, JSON.stringify(session, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Errore saveSession:', error.message);
+  }
+}
+
+function createSession(from, profileName = 'Cliente') {
+  const session = {
+    from,
+    profileName,
+    flow: null,
+    step: null,
+    data: {},
+    updatedAt: Date.now()
+  };
+  saveSession(session);
+  return session;
+}
+
+function getSession(from, profileName = 'Cliente') {
+  let session = loadSession(from);
+
+  if (!session) {
+    session = createSession(from, profileName);
+  } else {
+    session.profileName = profileName || session.profileName || 'Cliente';
+    saveSession(session);
+  }
+
+  return session;
+}
+
+function resetSession(from) {
+  try {
+    const file = getSessionFile(from);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  } catch (error) {
+    console.error('Errore resetSession:', error.message);
+  }
+}
+
+function setFlow(session, flow, firstStep) {
+  session.flow = flow;
+  session.step = firstStep;
+  session.data = {};
+  saveSession(session);
+}
+
+function updateSession(session) {
+  saveSession(session);
 }
 
 // ----------------------
@@ -200,7 +209,7 @@ async function sendInternalNotification(numbers, text, incomingFrom) {
 }
 
 // ----------------------
-// RIEPILOGO
+// RIEPILOGO INTERNO
 // ----------------------
 function buildInternalSummary(session) {
   const name = session.profileName || 'Cliente';
@@ -227,7 +236,7 @@ function buildInternalSummary(session) {
       `📞 Numero: ${from}\n` +
       `🚐 Mezzo richiesto: ${d.mezzo || '-'}\n` +
       `📅 Data inizio: ${d.dataInizio || '-'}\n` +
-      `⏱ Giorni: ${d.giorni || '-'}\n` +
+      `⏱ Durata: ${d.giorni || '-'}\n` +
       `📏 Km previsti: ${d.km || '-'}\n` +
       `📦 Utilizzo: ${d.utilizzo || '-'}`
     );
@@ -254,7 +263,7 @@ function buildInternalSummary(session) {
       `🚗 Veicolo: ${d.veicolo || '-'}\n` +
       `📍 Ritiro: ${d.ritiro || '-'}\n` +
       `📍 Consegna: ${d.consegna || '-'}\n` +
-      `📅 Quando: ${d.data || '-'}\n` +
+      `📅 Data richiesta: ${d.data || '-'}\n` +
       `📝 Note: ${d.note || '-'}`
     );
   }
@@ -276,9 +285,9 @@ function startFlow(session, flow) {
     setFlow(session, 'officina', 'veicolo');
     return (
       "🔧 Officina DP\n\n" +
-      "Perfetto, ti faccio alcune domande veloci.\n\n" +
-      "1️⃣ Che veicolo è? (marca e modello)\n\n" +
-      "Per ricominciare scrivi MENU."
+      "Perfetto, ti faccio qualche domanda veloce così possiamo organizzare al meglio la tua richiesta.\n\n" +
+      "1️⃣ Che veicolo è? (marca e modello)" +
+      restartHint()
     );
   }
 
@@ -286,9 +295,9 @@ function startFlow(session, flow) {
     setFlow(session, 'noleggio', 'mezzo');
     return (
       "🚐 Noleggio DP\n\n" +
-      "Perfetto, ti faccio alcune domande veloci.\n\n" +
-      "1️⃣ Che mezzo ti serve? (auto, furgone, altro)\n\n" +
-      "Per ricominciare scrivi MENU."
+      "Perfetto, ti faccio qualche domanda veloce per trovare il mezzo più adatto alle tue esigenze.\n\n" +
+      "1️⃣ Che mezzo ti serve? (auto, furgone, altro)" +
+      restartHint()
     );
   }
 
@@ -296,9 +305,9 @@ function startFlow(session, flow) {
     setFlow(session, 'vendita', 'tipoAuto');
     return (
       "🚗 Vendita Auto DP\n\n" +
-      "Perfetto, ti faccio alcune domande veloci.\n\n" +
-      "1️⃣ Che tipo di auto stai cercando?\n\n" +
-      "Per ricominciare scrivi MENU."
+      "Perfetto, ti faccio qualche domanda veloce così possiamo proporti la soluzione più adatta.\n\n" +
+      "1️⃣ Che tipo di auto stai cercando?" +
+      restartHint()
     );
   }
 
@@ -306,9 +315,9 @@ function startFlow(session, flow) {
     setFlow(session, 'trasporto', 'veicolo');
     return (
       "🚛 Trasporto Auto DP\n\n" +
-      "Perfetto, ti faccio alcune domande veloci.\n\n" +
-      "1️⃣ Che veicolo dobbiamo trasportare?\n\n" +
-      "Per ricominciare scrivi MENU."
+      "Perfetto, ti faccio qualche domanda veloce per preparare correttamente la richiesta di trasporto.\n\n" +
+      "1️⃣ Che veicolo dobbiamo trasportare?" +
+      restartHint()
     );
   }
 
@@ -325,28 +334,28 @@ async function handleOfficina(session, message) {
     d.veicolo = message;
     session.step = 'targa';
     updateSession(session);
-    return "2️⃣ Targa del veicolo?";
+    return "2️⃣ Perfetto. Mi indichi la targa del veicolo?";
   }
 
   if (session.step === 'targa') {
     d.targa = message;
     session.step = 'km';
     updateSession(session);
-    return "3️⃣ Km attuali del veicolo?";
+    return "3️⃣ Grazie. Quanti km ha attualmente il veicolo?";
   }
 
   if (session.step === 'km') {
     d.km = message;
     session.step = 'intervento';
     updateSession(session);
-    return "4️⃣ Che intervento devi fare?";
+    return "4️⃣ Che intervento desideri effettuare? (tagliando, diagnosi, freni, riparazione, altro)";
   }
 
   if (session.step === 'intervento') {
     d.intervento = message;
     session.step = 'preferenza';
     updateSession(session);
-    return "5️⃣ Quando preferisci? (giorno / mattina / pomeriggio)";
+    return "5️⃣ Quando preferisci essere contattato o fissare l’appuntamento? (giorno / mattina / pomeriggio)";
   }
 
   if (session.step === 'preferenza') {
@@ -354,10 +363,14 @@ async function handleOfficina(session, message) {
     updateSession(session);
     await finalizeFlow(session);
     resetSession(session.from);
-    return "✅ Perfetto, richiesta officina registrata. Ti ricontatteremo a breve.";
+
+    return (
+      "✅ Perfetto, abbiamo registrato la tua richiesta per l’officina.\n\n" +
+      "Un nostro operatore ti ricontatterà al più presto per conferma e organizzazione dell’intervento."
+    );
   }
 
-  return "Scrivi MENU per ricominciare.";
+  return "Per favore scrivi MENU per ricominciare.";
 }
 
 // ----------------------
@@ -370,7 +383,7 @@ async function handleNoleggio(session, message) {
     d.mezzo = message;
     session.step = 'dataInizio';
     updateSession(session);
-    return "2️⃣ Da quando ti serve?";
+    return "2️⃣ Da quando ti serve il mezzo?";
   }
 
   if (session.step === 'dataInizio') {
@@ -384,14 +397,14 @@ async function handleNoleggio(session, message) {
     d.giorni = message;
     session.step = 'km';
     updateSession(session);
-    return "4️⃣ Quanti km pensi di fare circa?";
+    return "4️⃣ Quanti km pensi di fare indicativamente?";
   }
 
   if (session.step === 'km') {
     d.km = message;
     session.step = 'utilizzo';
     updateSession(session);
-    return "5️⃣ Per che utilizzo ti serve?";
+    return "5️⃣ Per quale utilizzo ti serve? (lavoro, trasloco, viaggio, altro)";
   }
 
   if (session.step === 'utilizzo') {
@@ -399,10 +412,14 @@ async function handleNoleggio(session, message) {
     updateSession(session);
     await finalizeFlow(session);
     resetSession(session.from);
-    return "✅ Perfetto, richiesta noleggio registrata. Ti ricontatteremo a breve.";
+
+    return (
+      "✅ Perfetto, abbiamo registrato la tua richiesta di noleggio.\n\n" +
+      "Ti ricontatteremo al più presto con disponibilità e informazioni utili."
+    );
   }
 
-  return "Scrivi MENU per ricominciare.";
+  return "Per favore scrivi MENU per ricominciare.";
 }
 
 // ----------------------
@@ -415,28 +432,28 @@ async function handleVendita(session, message) {
     d.tipoAuto = message;
     session.step = 'budget';
     updateSession(session);
-    return "2️⃣ Qual è il budget indicativo?";
+    return "2️⃣ Qual è il budget indicativo che hai in mente?";
   }
 
   if (session.step === 'budget') {
     d.budget = message;
     session.step = 'preferenze';
     updateSession(session);
-    return "3️⃣ Hai preferenze particolari? (diesel, benzina, ibrida, automatico...)";
+    return "3️⃣ Hai preferenze particolari? (diesel, benzina, ibrida, automatico, SUV, utilitaria, altro)";
   }
 
   if (session.step === 'preferenze') {
     d.preferenze = message;
     session.step = 'permuta';
     updateSession(session);
-    return "4️⃣ Hai un usato da dare in permuta? (sì / no)";
+    return "4️⃣ Hai un veicolo da dare eventualmente in permuta? (sì / no)";
   }
 
   if (session.step === 'permuta') {
     d.permuta = message;
     session.step = 'note';
     updateSession(session);
-    return "5️⃣ Altre richieste o note utili?";
+    return "5️⃣ Hai altre richieste o note utili da segnalarci?";
   }
 
   if (session.step === 'note') {
@@ -444,10 +461,14 @@ async function handleVendita(session, message) {
     updateSession(session);
     await finalizeFlow(session);
     resetSession(session.from);
-    return "✅ Perfetto, richiesta vendita registrata. Ti ricontatteremo a breve.";
+
+    return (
+      "✅ Perfetto, abbiamo registrato la tua richiesta per la vendita auto.\n\n" +
+      "Ti ricontatteremo al più presto con le proposte più adatte."
+    );
   }
 
-  return "Scrivi MENU per ricominciare.";
+  return "Per favore scrivi MENU per ricominciare.";
 }
 
 // ----------------------
@@ -460,28 +481,28 @@ async function handleTrasporto(session, message) {
     d.veicolo = message;
     session.step = 'ritiro';
     updateSession(session);
-    return "2️⃣ Luogo di ritiro?";
+    return "2️⃣ Da dove deve essere ritirato il veicolo?";
   }
 
   if (session.step === 'ritiro') {
     d.ritiro = message;
     session.step = 'consegna';
     updateSession(session);
-    return "3️⃣ Luogo di consegna?";
+    return "3️⃣ Dove deve essere consegnato il veicolo?";
   }
 
   if (session.step === 'consegna') {
     d.consegna = message;
     session.step = 'data';
     updateSession(session);
-    return "4️⃣ Quando ti serve il trasporto?";
+    return "4️⃣ Quando ti servirebbe il trasporto?";
   }
 
   if (session.step === 'data') {
     d.data = message;
     session.step = 'note';
     updateSession(session);
-    return "5️⃣ Note utili? (marciante / non marciante / urgenza)";
+    return "5️⃣ Hai note utili da indicarci? (marciante / non marciante / urgenza / altro)";
   }
 
   if (session.step === 'note') {
@@ -489,10 +510,14 @@ async function handleTrasporto(session, message) {
     updateSession(session);
     await finalizeFlow(session);
     resetSession(session.from);
-    return "✅ Perfetto, richiesta trasporto registrata. Ti ricontatteremo a breve.";
+
+    return (
+      "✅ Perfetto, abbiamo registrato la tua richiesta di trasporto.\n\n" +
+      "Ti ricontatteremo al più presto per conferma e organizzazione del servizio."
+    );
   }
 
-  return "Scrivi MENU per ricominciare.";
+  return "Per favore scrivi MENU per ricominciare.";
 }
 
 // ----------------------
@@ -511,6 +536,12 @@ app.post('/whatsapp', async (req, res) => {
     if (!TWILIO_WHATSAPP_NUMBER) throw new Error('TWILIO_WHATSAPP_NUMBER mancante');
 
     const session = getSession(incomingFrom, profileName);
+
+    console.log('--- NUOVO MESSAGGIO ---');
+    console.log('From:', incomingFrom);
+    console.log('Body:', incomingText);
+    console.log('Flow:', session.flow);
+    console.log('Step:', session.step);
 
     // MENU / RESET
     if (
@@ -559,14 +590,25 @@ app.post('/whatsapp', async (req, res) => {
     } else if (intent === 'trasporto') {
       twiml.message(startFlow(session, 'trasporto'));
     } else {
-      twiml.message(mainMenu());
+      twiml.message(
+        "Grazie per averci scritto 😊\n\n" +
+        "Per aiutarti nel modo più rapido possibile, scegli uno dei nostri servizi:\n\n" +
+        "🔧 Officina\n" +
+        "🚐 Noleggio\n" +
+        "🚗 Vendita Auto\n" +
+        "🚛 Trasporto Auto\n\n" +
+        "Scrivi pure il servizio che ti interessa."
+      );
     }
 
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     res.end(twiml.toString());
   } catch (error) {
     console.error('Errore generale:', error.message);
-    twiml.message("Ciao 👋 abbiamo ricevuto il tuo messaggio. Ti ricontatteremo al più presto.");
+    twiml.message(
+      "Ciao 👋 abbiamo ricevuto il tuo messaggio.\n\n" +
+      "Al momento c’è un piccolo problema tecnico temporaneo, ma ti ricontatteremo al più presto."
+    );
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     res.end(twiml.toString());
   }

@@ -26,11 +26,10 @@ const LINK_OFFICINA =
 const LINK_NOLEGGIO =
   'https://calendly.com/contabilita-trasportidp/noleggio-dp';
 
-// memoria temporanea sessioni
 const sessions = {};
 
 // =========================
-// UTIL
+// FUNZIONI BASE
 // =========================
 function cleanText(text) {
   return (text || '').trim();
@@ -48,16 +47,21 @@ function detectIntent(text) {
     msg.includes('tagliando') ||
     msg.includes('riparazione') ||
     msg.includes('guasto') ||
-    msg.includes('meccanico')
+    msg.includes('meccanico') ||
+    msg.includes('diagnosi') ||
+    msg.includes('revisione') ||
+    msg.includes('problema auto')
   ) {
     return 'officina';
   }
 
   if (
     msg.includes('noleggio') ||
+    msg.includes('noleggiare') ||
     msg.includes('furgone') ||
+    msg.includes('furgoni') ||
     msg.includes('auto a noleggio') ||
-    msg.includes('noleggiare')
+    msg.includes('rent')
   ) {
     return 'noleggio';
   }
@@ -66,7 +70,9 @@ function detectIntent(text) {
     msg.includes('vendita') ||
     msg.includes('auto usata') ||
     msg.includes('comprare auto') ||
-    msg.includes('acquisto')
+    msg.includes('acquisto') ||
+    msg.includes('cerco auto') ||
+    msg.includes('vorrei comprare')
   ) {
     return 'vendita';
   }
@@ -74,13 +80,26 @@ function detectIntent(text) {
   if (
     msg.includes('trasporto') ||
     msg.includes('bisarca') ||
-    msg.includes('ritiro') ||
-    msg.includes('consegna veicolo')
+    msg.includes('ritiro veicolo') ||
+    msg.includes('consegna veicolo') ||
+    msg.includes('spostare auto') ||
+    msg.includes('trasportare auto')
   ) {
     return 'trasporto';
   }
 
   return 'generico';
+}
+
+function intentFromMenuChoice(text) {
+  const msg = normalize(text);
+
+  if (msg === '1') return 'officina';
+  if (msg === '2') return 'noleggio';
+  if (msg === '3') return 'vendita';
+  if (msg === '4') return 'trasporto';
+
+  return detectIntent(msg) !== 'generico' ? detectIntent(msg) : null;
 }
 
 function getRecipients(intent) {
@@ -98,100 +117,160 @@ function getReparto(intent) {
   return 'GENERICO';
 }
 
+// =========================
+// TESTI PROFESSIONALI
+// =========================
+function buildWelcomeMenu() {
+  return (
+    'Buongiorno 👋\n' +
+    'Benvenuto in *Trasporti DP*.\n\n' +
+    'Per poterla assistere al meglio, selezioni il servizio di suo interesse rispondendo con il numero corrispondente:\n\n' +
+    '1️⃣ *Officina* 🔧\n' +
+    '2️⃣ *Noleggio* 🚐\n' +
+    '3️⃣ *Vendita auto* 🚗\n' +
+    '4️⃣ *Trasporto veicoli* 🚛\n\n' +
+    'In alternativa, può anche scrivere direttamente la sua richiesta.'
+  );
+}
+
+function buildStartMessageByIntent(intent) {
+  if (intent === 'officina') {
+    return (
+      'Perfetto 👌\n' +
+      'La sua richiesta è stata indirizzata al reparto *Officina* 🔧\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per gestire al meglio la richiesta.'
+    );
+  }
+
+  if (intent === 'noleggio') {
+    return (
+      'Perfetto 👌\n' +
+      'La sua richiesta è stata indirizzata al reparto *Noleggio* 🚐\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per procedere.'
+    );
+  }
+
+  if (intent === 'vendita') {
+    return (
+      'Perfetto 👌\n' +
+      'La sua richiesta è stata indirizzata al reparto *Vendita auto* 🚗\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per aiutarla al meglio.'
+    );
+  }
+
+  if (intent === 'trasporto') {
+    return (
+      'Perfetto 👌\n' +
+      'La sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛\n\n' +
+      'Le chiediamo gentilmente alcune informazioni per organizzare la richiesta.'
+    );
+  }
+
+  return '';
+}
+
 function buildQuestions(intent) {
   if (intent === 'officina') {
     return [
-      'Perfetto 👨‍🔧\nHai bisogno dell’officina.\n\nCome ti chiami? (nome e cognome)',
-      'Indicaci il modello del veicolo.',
-      'Indicaci la targa del veicolo.',
-      'Che problema ha il veicolo oppure quale intervento ti serve?',
-      'Quale giorno preferisci?',
-      'Lasciaci un numero di telefono per ricontattarti.'
+      'Può indicarci *nome e cognome*?',
+      'Qual è il *modello del veicolo*?',
+      'Può indicarci la *targa*?',
+      'Qual è il *problema* oppure quale *intervento* desidera effettuare?',
+      'Ha un *giorno preferito* per l’appuntamento?',
+      'Può lasciarci un *numero di telefono* per il ricontatto?'
     ];
   }
 
   if (intent === 'noleggio') {
     return [
-      'Perfetto 🚐\nHai bisogno del noleggio.\n\nCome ti chiami? (nome e cognome)',
-      'Che mezzo ti serve?',
-      'Data di inizio noleggio?',
-      'Data di fine noleggio?',
-      'Lasciaci un numero di telefono per ricontattarti.'
+      'Può indicarci *nome e cognome*?',
+      'Che *mezzo* le occorre?',
+      'Qual è la *data di inizio* del noleggio?',
+      'Qual è la *data di fine* del noleggio?',
+      'Può lasciarci un *numero di telefono* per il ricontatto?'
     ];
   }
 
   if (intent === 'vendita') {
     return [
-      'Perfetto 🚗\nHai bisogno del reparto vendita.\n\nCome ti chiami? (nome e cognome)',
-      'Che tipo di auto stai cercando?',
-      'Qual è il tuo budget indicativo?',
-      'Hai una permuta? Se sì, indica modello e anno.',
-      'Lasciaci un numero di telefono per ricontattarti.'
+      'Può indicarci *nome e cognome*?',
+      'Che tipo di *auto* sta cercando?',
+      'Qual è il suo *budget indicativo*?',
+      'Ha una *permuta*? Se sì, ci indichi modello e anno.',
+      'Può lasciarci un *numero di telefono* per il ricontatto?'
     ];
   }
 
   if (intent === 'trasporto') {
     return [
-      'Perfetto 🚛\nHai bisogno del trasporto auto.\n\nCome ti chiami? (nome e cognome)',
-      'Che veicolo dobbiamo trasportare?',
-      'Da dove va ritirato?',
-      'Dove va consegnato?',
-      'Quando serve il trasporto?',
-      'Lasciaci un numero di telefono per ricontattarti.'
+      'Può indicarci *nome e cognome*?',
+      'Qual è il *veicolo da trasportare*?',
+      'Qual è il *luogo di ritiro*?',
+      'Qual è il *luogo di consegna*?',
+      'Entro quando sarebbe necessario il *trasporto*?',
+      'Può lasciarci un *numero di telefono* per il ricontatto?'
     ];
   }
 
   return [];
 }
 
-function buildMenuMessage() {
-  return (
-    'Ciao 👋 benvenuto in Trasporti DP.\n\n' +
-    'Scrivi il numero del servizio che ti interessa:\n\n' +
-    '1. Officina\n' +
-    '2. Noleggio\n' +
-    '3. Vendita auto\n' +
-    '4. Trasporto auto'
-  );
-}
-
-function intentFromMenuChoice(text) {
-  const msg = normalize(text);
-
-  if (msg === '1' || msg.includes('officina')) return 'officina';
-  if (msg === '2' || msg.includes('noleggio')) return 'noleggio';
-  if (msg === '3' || msg.includes('vendita')) return 'vendita';
-  if (msg === '4' || msg.includes('trasporto')) return 'trasporto';
-
-  return null;
-}
-
 function buildCustomerConfirmation(intent) {
   if (intent === 'officina') {
     return (
-      'Grazie 👍\nLa tua richiesta per l’officina è stata registrata e inoltrata.\n' +
-      `Se preferisci, puoi prenotare anche qui:\n${LINK_OFFICINA}`
+      'La ringraziamo ✅\n\n' +
+      'La sua richiesta per il reparto *Officina* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato il prima possibile.\n\n' +
+      `Per prenotare direttamente può usare anche questo link:\n${LINK_OFFICINA}`
     );
   }
 
   if (intent === 'noleggio') {
     return (
-      'Grazie 👍\nLa tua richiesta per il noleggio è stata registrata e inoltrata.\n' +
-      `Se preferisci, puoi prenotare anche qui:\n${LINK_NOLEGGIO}`
+      'La ringraziamo ✅\n\n' +
+      'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato il prima possibile.\n\n' +
+      `Per prenotare direttamente può usare anche questo link:\n${LINK_NOLEGGIO}`
     );
   }
 
   if (intent === 'vendita') {
-    return 'Grazie 👍\nLa tua richiesta per la vendita auto è stata registrata e inoltrata. Ti ricontatteremo al più presto.';
+    return (
+      'La ringraziamo ✅\n\n' +
+      'La sua richiesta per il reparto *Vendita auto* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato il prima possibile.'
+    );
   }
 
   if (intent === 'trasporto') {
-    return 'Grazie 👍\nLa tua richiesta per il trasporto auto è stata registrata e inoltrata. Ti ricontatteremo al più presto.';
+    return (
+      'La ringraziamo ✅\n\n' +
+      'La sua richiesta per il reparto *Trasporto veicoli* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato il prima possibile.'
+    );
   }
 
-  return 'Grazie 👍\nAbbiamo ricevuto la tua richiesta e ti ricontatteremo al più presto.';
+  return (
+    'La ringraziamo ✅\n\n' +
+    'La sua richiesta è stata ricevuta correttamente.\n' +
+    'Sarà ricontattato dal nostro staff il prima possibile.'
+  );
 }
 
+function buildInvalidChoiceMessage() {
+  return (
+    'Scelta non riconosciuta.\n\n' +
+    'Per favore risponda con:\n' +
+    '1️⃣ per *Officina* 🔧\n' +
+    '2️⃣ per *Noleggio* 🚐\n' +
+    '3️⃣ per *Vendita auto* 🚗\n' +
+    '4️⃣ per *Trasporto veicoli* 🚛'
+  );
+}
+
+// =========================
+// MESSAGGIO INTERNO
+// =========================
 function buildInternalMessage(session, incomingFrom, profileName) {
   const intent = session.intent;
   const reparto = getReparto(intent);
@@ -231,7 +310,7 @@ function buildInternalMessage(session, incomingFrom, profileName) {
       `📞 Numero WhatsApp: ${incomingFrom}\n\n` +
       `Nome e cognome: ${a[0] || '-'}\n` +
       `Auto cercata: ${a[1] || '-'}\n` +
-      `Budget: ${a[2] || '-'}\n` +
+      `Budget indicativo: ${a[2] || '-'}\n` +
       `Permuta: ${a[3] || '-'}\n` +
       `Telefono ricontatto: ${a[4] || '-'}`
     );
@@ -258,6 +337,9 @@ function buildInternalMessage(session, incomingFrom, profileName) {
   );
 }
 
+// =========================
+// INVIO
+// =========================
 async function sendInternalNotification(numbers, text) {
   for (const to of numbers) {
     if (to === TWILIO_WHATSAPP_NUMBER) {
@@ -278,6 +360,9 @@ async function sendInternalNotification(numbers, text) {
   }
 }
 
+// =========================
+// SESSIONI
+// =========================
 function resetSession(phone) {
   delete sessions[phone];
 }
@@ -311,7 +396,7 @@ app.post('/whatsapp', async (req, res) => {
 
   try {
     if (!incomingFrom) {
-      twiml.message('Errore nella ricezione del messaggio.');
+      twiml.message('Si è verificato un errore nella ricezione del messaggio.');
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -323,39 +408,47 @@ app.post('/whatsapp', async (req, res) => {
       session = null;
     }
 
+    // COMANDI UTILI
+    if (normalize(incomingText) === 'reset' || normalize(incomingText) === 'menu') {
+      resetSession(incomingFrom);
+      twiml.message(buildWelcomeMenu());
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
+    }
+
+    // NUOVO CLIENTE / NUOVA SESSIONE
     if (!session) {
       session = createSession(incomingFrom, profileName);
 
-      // Se il cliente scrive già il servizio, entriamo subito nel flusso giusto
-      const directIntent = detectIntent(incomingText);
+      const detectedIntent = detectIntent(incomingText);
 
-      if (directIntent !== 'generico') {
-        session.intent = directIntent;
-        session.questions = buildQuestions(directIntent);
+      // riconoscimento automatico del servizio
+      if (detectedIntent !== 'generico') {
+        session.intent = detectedIntent;
+        session.questions = buildQuestions(detectedIntent);
         session.state = 'questions';
         session.questionIndex = 0;
-        twiml.message(session.questions[0]);
+
+        const firstMessage =
+          buildStartMessageByIntent(detectedIntent) +
+          '\n\n' +
+          session.questions[0];
+
+        twiml.message(firstMessage);
       } else {
-        twiml.message(buildMenuMessage());
+        twiml.message(buildWelcomeMenu());
       }
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    // Stato menu
+    // STATO MENU
     if (session.state === 'menu') {
       const chosenIntent = intentFromMenuChoice(incomingText);
 
       if (!chosenIntent) {
-        twiml.message(
-          'Scelta non valida.\n\n' +
-          'Rispondi con:\n' +
-          '1 per Officina\n' +
-          '2 per Noleggio\n' +
-          '3 per Vendita auto\n' +
-          '4 per Trasporto auto'
-        );
+        twiml.message(buildInvalidChoiceMessage());
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
@@ -365,12 +458,17 @@ app.post('/whatsapp', async (req, res) => {
       session.state = 'questions';
       session.questionIndex = 0;
 
-      twiml.message(session.questions[0]);
+      const message =
+        buildStartMessageByIntent(chosenIntent) +
+        '\n\n' +
+        session.questions[0];
+
+      twiml.message(message);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    // Stato domande
+    // STATO DOMANDE
     if (session.state === 'questions') {
       session.answers.push(incomingText);
       session.questionIndex += 1;
@@ -381,7 +479,6 @@ app.post('/whatsapp', async (req, res) => {
         return res.end(twiml.toString());
       }
 
-      // tutte le risposte raccolte
       const internalMessage = buildInternalMessage(
         session,
         incomingFrom,
@@ -398,15 +495,14 @@ app.post('/whatsapp', async (req, res) => {
       return res.end(twiml.toString());
     }
 
-    // fallback
     resetSession(incomingFrom);
-    twiml.message(buildMenuMessage());
+    twiml.message(buildWelcomeMenu());
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());
   } catch (error) {
     console.error('Errore generale:', error);
     twiml.message(
-      'Ciao 👋 si è verificato un problema tecnico. Riprova tra poco.'
+      'La ringraziamo per il messaggio. Al momento si è verificato un problema tecnico. La invitiamo a riprovare tra poco.'
     );
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());

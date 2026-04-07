@@ -26,6 +26,11 @@ const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
 // =========================
+// URL BASE APP
+// =========================
+const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
+
+// =========================
 // NEXI CONFIG
 // =========================
 const NEXI_ENV = (process.env.NEXI_ENV || 'sandbox').toLowerCase();
@@ -36,9 +41,17 @@ const NEXI_BASE_URL =
     ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api'
     : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api';
 
-const NEXI_RESULT_URL = process.env.NEXI_RESULT_URL || '';
-const NEXI_CANCEL_URL = process.env.NEXI_CANCEL_URL || '';
-const NEXI_NOTIFICATION_URL = process.env.NEXI_NOTIFICATION_URL || '';
+const NEXI_RESULT_URL =
+  process.env.NEXI_RESULT_URL ||
+  (APP_BASE_URL ? `${APP_BASE_URL}/nexi/result` : '');
+
+const NEXI_CANCEL_URL =
+  process.env.NEXI_CANCEL_URL ||
+  (APP_BASE_URL ? `${APP_BASE_URL}/nexi/cancel` : '');
+
+const NEXI_NOTIFICATION_URL =
+  process.env.NEXI_NOTIFICATION_URL ||
+  (APP_BASE_URL ? `${APP_BASE_URL}/nexi-notify` : '');
 
 // =========================
 // PREZZI
@@ -47,8 +60,8 @@ const SOSTA_PRICE_PER_DAY_CENTS = parseInt(process.env.SOSTA_PRICE_PER_DAY_CENTS
 const SOSTA_CORRENTE_EXTRA_CENTS = parseInt(process.env.SOSTA_CORRENTE_EXTRA_CENTS || '500', 10);
 const SOSTA_ACQUA_EXTRA_CENTS = parseInt(process.env.SOSTA_ACQUA_EXTRA_CENTS || '300', 10);
 
-// opzionale: caparra noleggio
-const NOLEGGIO_DEPOSIT_ENABLED = (process.env.NOLEGGIO_DEPOSIT_ENABLED || 'false').toLowerCase() === 'true';
+const NOLEGGIO_DEPOSIT_ENABLED =
+  (process.env.NOLEGGIO_DEPOSIT_ENABLED || 'false').toLowerCase() === 'true';
 const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '0', 10);
 
 const sessions = {};
@@ -86,13 +99,6 @@ function yesNoLabel(value) {
 
 function isYes(value) {
   return yesNoLabel(value) === 'SÌ';
-}
-
-function parsePositiveInt(text) {
-  const match = cleanText(text).match(/\d+/);
-  if (!match) return null;
-  const n = parseInt(match[0], 10);
-  return Number.isNaN(n) || n <= 0 ? null : n;
 }
 
 function buildShortOrderId(prefix = 'DP') {
@@ -174,7 +180,6 @@ function extractDateRange(text) {
 
   if (!start || !end) return null;
 
-  // se l'anno finale manca ed è prima dell'inizio, prova anno successivo
   if (!match[6] && end < start) {
     end = parseItalianDate(match[4], match[5], String(start.getFullYear() + 1));
   }
@@ -470,7 +475,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     const depositPart =
       extra.paymentLink && extra.depositCents
         ? `\n\nPer confermare in autonomia può versare la *caparra* di € ${eurosFromCents(extra.depositCents)} qui:\n${extra.paymentLink}`
-        : '';
+        : '\n\nIl nostro staff le confermerà disponibilità e modalità di eventuale pagamento.';
 
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
@@ -564,11 +569,7 @@ function computeSostaAmountCents(answers) {
 // NEXI
 // =========================
 function canUseNexi() {
-  return Boolean(
-    NEXI_API_KEY &&
-    NEXI_RESULT_URL &&
-    NEXI_CANCEL_URL
-  );
+  return Boolean(NEXI_API_KEY && NEXI_RESULT_URL && NEXI_CANCEL_URL);
 }
 
 async function createNexiPayByLink({
@@ -643,7 +644,7 @@ async function createNexiPayByLink({
 }
 
 // =========================
-// MESSAGGIO INTERNO
+// MESSAGGI INTERNI
 // =========================
 function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
   const intent = session.intent;
@@ -759,7 +760,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
 }
 
 // =========================
-// INVIO
+// INVIO INTERNO
 // =========================
 async function sendInternalNotification(numbers, text) {
   for (const to of numbers) {
@@ -807,7 +808,7 @@ function isExpired(session) {
 }
 
 // =========================
-// VALIDAZIONI RISPOSTE
+// VALIDAZIONI
 // =========================
 function validateAnswer(session, answer) {
   const intent = session.intent;
@@ -854,12 +855,138 @@ function validateAnswer(session, answer) {
 }
 
 // =========================
-// WEBHOOK NEXI
+// ROUTE NEXI
 // =========================
+app.get('/nexi/result', (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Pagamento completato</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+          .box { max-width: 700px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 30px; }
+          h1 { color: #1f7a1f; }
+        </style>
+      </head>
+      <body>
+        <div class="box">
+          <h1>Pagamento completato ✅</h1>
+          <p>Grazie. Il pagamento risulta concluso.</p>
+          <p>Riceverà conferma dal nostro staff nel più breve tempo possibile.</p>
+          <p>Può chiudere questa pagina.</p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+app.get('/nexi/cancel', (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Pagamento annullato</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+          .box { max-width: 700px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 30px; }
+          h1 { color: #b33a3a; }
+        </style>
+      </head>
+      <body>
+        <div class="box">
+          <h1>Pagamento annullato</h1>
+          <p>Il pagamento non è stato completato.</p>
+          <p>Se desidera, può tornare su WhatsApp e richiedere nuovamente il link.</p>
+          <p>Può chiudere questa pagina.</p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
 app.post('/nexi-notify', async (req, res) => {
   console.log('Notifica Nexi ricevuta:', JSON.stringify(req.body || {}, null, 2));
   res.status(200).send('OK');
 });
+
+// =========================
+// NEXI HELPERS
+// =========================
+function canUseNexi() {
+  return Boolean(NEXI_API_KEY && NEXI_RESULT_URL && NEXI_CANCEL_URL);
+}
+
+async function createNexiPayByLink({
+  customerName,
+  customerWhatsapp,
+  amountCents,
+  description
+}) {
+  const correlationId = crypto.randomUUID();
+  const orderId = buildShortOrderId('DP');
+  const expirationDate = addDaysIso(7);
+
+  const payload = {
+    order: {
+      orderId,
+      amount: String(amountCents),
+      currency: 'EUR',
+      description
+    },
+    paymentSession: {
+      actionType: 'PAY',
+      amount: String(amountCents)
+    },
+    language: 'ita',
+    resultUrl: NEXI_RESULT_URL,
+    cancelUrl: NEXI_CANCEL_URL,
+    expirationDate
+  };
+
+  if (customerName) {
+    payload.customerInfo = {
+      cardHolderName: customerName
+    };
+  }
+
+  if (customerWhatsapp) {
+    payload.order.customField = customerWhatsapp;
+  }
+
+  if (NEXI_NOTIFICATION_URL) {
+    payload.notificationUrl = NEXI_NOTIFICATION_URL;
+  }
+
+  const response = await fetch(`${NEXI_BASE_URL}/v1/orders/paybylink`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': NEXI_API_KEY,
+      'Correlation-Id': correlationId
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message =
+      data?.errors?.map(e => e.description).join(' | ') ||
+      data?.title ||
+      `Errore Nexi ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return {
+    orderId,
+    link: data?.paymentLink?.link || '',
+    linkId: data?.paymentLink?.linkId || '',
+    status: data?.paymentLink?.status || '',
+    expirationDate: data?.paymentLink?.expirationDate || expirationDate
+  };
+}
 
 // =========================
 // WEBHOOK WHATSAPP

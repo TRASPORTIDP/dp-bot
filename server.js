@@ -2,9 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
+const crypto = require('crypto');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
@@ -23,8 +25,31 @@ const GENERAL_NUMBERS = [
 const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
-const LINK_NOLEGGIO =
-  'https://calendly.com/contabilita-trasportidp/noleggio-dp';
+// =========================
+// NEXI CONFIG
+// =========================
+const NEXI_ENV = (process.env.NEXI_ENV || 'sandbox').toLowerCase();
+const NEXI_API_KEY = process.env.NEXI_API_KEY || '';
+
+const NEXI_BASE_URL =
+  NEXI_ENV === 'prod'
+    ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api'
+    : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api';
+
+const NEXI_RESULT_URL = process.env.NEXI_RESULT_URL || '';
+const NEXI_CANCEL_URL = process.env.NEXI_CANCEL_URL || '';
+const NEXI_NOTIFICATION_URL = process.env.NEXI_NOTIFICATION_URL || '';
+
+// =========================
+// PREZZI
+// =========================
+const SOSTA_PRICE_PER_DAY_CENTS = parseInt(process.env.SOSTA_PRICE_PER_DAY_CENTS || '2000', 10);
+const SOSTA_CORRENTE_EXTRA_CENTS = parseInt(process.env.SOSTA_CORRENTE_EXTRA_CENTS || '500', 10);
+const SOSTA_ACQUA_EXTRA_CENTS = parseInt(process.env.SOSTA_ACQUA_EXTRA_CENTS || '300', 10);
+
+// opzionale: caparra noleggio
+const NOLEGGIO_DEPOSIT_ENABLED = (process.env.NOLEGGIO_DEPOSIT_ENABLED || 'false').toLowerCase() === 'true';
+const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '0', 10);
 
 const sessions = {};
 
@@ -48,6 +73,129 @@ function formatWhatsappNumber(number) {
   return cleanText(number) || '-';
 }
 
+function eurosFromCents(cents) {
+  return (Number(cents || 0) / 100).toFixed(2).replace('.', ',');
+}
+
+function yesNoLabel(value) {
+  const msg = normalize(value);
+  if (['si', 'sì', 'yes', 'y', 'ok', 'certo'].includes(msg)) return 'SÌ';
+  if (['no', 'n'].includes(msg)) return 'NO';
+  return cleanText(value) || '-';
+}
+
+function isYes(value) {
+  return yesNoLabel(value) === 'SÌ';
+}
+
+function parsePositiveInt(text) {
+  const match = cleanText(text).match(/\d+/);
+  if (!match) return null;
+  const n = parseInt(match[0], 10);
+  return Number.isNaN(n) || n <= 0 ? null : n;
+}
+
+function buildShortOrderId(prefix = 'DP') {
+  const ts = Date.now().toString().slice(-10);
+  const rnd = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  return `${prefix}${ts}${rnd}`.slice(0, 18);
+}
+
+function addDaysIso(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateIT(dateObj) {
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function toLocalMidday(dateObj) {
+  return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 12, 0, 0, 0);
+}
+
+function diffDaysInclusive(startDate, endDate) {
+  const ms = toLocalMidday(endDate) - toLocalMidday(startDate);
+  const days = Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
+  return days > 0 ? days : null;
+}
+
+function parseItalianDate(dayStr, monthStr, yearStr) {
+  const day = parseInt(dayStr, 10);
+  const month = parseInt(monthStr, 10);
+  let year = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
+
+  if (String(year).length === 2) {
+    year += 2000;
+  }
+
+  if (!day || !month || !year) return null;
+
+  const d = new Date(year, month - 1, day, 12, 0, 0, 0);
+
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return d;
+}
+
+function normalizeDateRangeText(text) {
+  return normalize(text)
+    .replace(/\s+/g, ' ')
+    .replace(/\bdal\b/g, '')
+    .replace(/\balla\b/g, '')
+    .replace(/\bal\b/g, '-')
+    .replace(/\ba\b/g, '-')
+    .replace(/\bto\b/g, '-')
+    .replace(/\s*-\s*/g, '-')
+    .trim();
+}
+
+function extractDateRange(text) {
+  const raw = normalizeDateRangeText(text);
+
+  const regex =
+    /(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\s*-\s*(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/;
+
+  const match = raw.match(regex);
+  if (!match) return null;
+
+  const start = parseItalianDate(match[1], match[2], match[3]);
+  let end = parseItalianDate(match[4], match[5], match[6]);
+
+  if (!start || !end) return null;
+
+  // se l'anno finale manca ed è prima dell'inizio, prova anno successivo
+  if (!match[6] && end < start) {
+    end = parseItalianDate(match[4], match[5], String(start.getFullYear() + 1));
+  }
+
+  if (!end || end < start) return null;
+
+  const days = diffDaysInclusive(start, end);
+  if (!days) return null;
+
+  return {
+    startDate: start,
+    endDate: end,
+    startLabel: formatDateIT(start),
+    endLabel: formatDateIT(end),
+    days
+  };
+}
+
+// =========================
+// INTENT
+// =========================
 function detectIntent(text) {
   const msg = normalize(text);
 
@@ -148,10 +296,7 @@ function intentFromMenuChoice(text) {
 }
 
 function getRecipients(intent) {
-  if (intent === 'officina') {
-    return OFFICINA_NUMBERS;
-  }
-
+  if (intent === 'officina') return OFFICINA_NUMBERS;
   return GENERAL_NUMBERS;
 }
 
@@ -166,7 +311,7 @@ function getReparto(intent) {
 }
 
 // =========================
-// TESTI PROFESSIONALI
+// TESTI
 // =========================
 function buildWelcomeMenu(profileName) {
   const customerName = formatCustomerName(profileName);
@@ -232,7 +377,7 @@ function buildStartMessageByIntent(intent, profileName) {
     return (
       `Salve ${customerName} 👋\n\n` +
       'La sua richiesta è stata indirizzata al servizio *Parcheggio / Sosta* 🅿️.\n\n' +
-      'Le chiediamo gentilmente alcune informazioni per verificare disponibilità e servizi.'
+      'Le chiediamo gentilmente alcune informazioni per verificare disponibilità, servizi e importo.'
     );
   }
 
@@ -252,8 +397,7 @@ function buildQuestions(intent) {
   if (intent === 'noleggio') {
     return [
       'Che *mezzo* le occorre?',
-      'Qual è la *data di inizio* del noleggio?',
-      'Qual è la *data di fine* del noleggio?'
+      'Può indicarci le *date del noleggio* in questo formato?\n\nEsempio: *10/05 - 15/05*'
     ];
   }
 
@@ -283,8 +427,7 @@ function buildQuestions(intent) {
   if (intent === 'parcheggio_sosta') {
     return [
       'Qual è il *tipo di mezzo*? (es. auto, furgone, camper, carrello, altro)',
-      'Qual è la *data di arrivo*?',
-      'Per quanti *giorni di sosta* ha bisogno?',
+      'Può indicarci le *date della sosta* in questo formato?\n\nEsempio: *10/05 - 15/05*',
       'Ha bisogno di *corrente*? (sì / no)',
       'Ha bisogno di *acqua*? (sì / no)'
     ];
@@ -293,7 +436,20 @@ function buildQuestions(intent) {
   return [];
 }
 
-function buildCustomerConfirmation(intent, profileName) {
+function buildInvalidChoiceMessage() {
+  return (
+    'Scelta non riconosciuta.\n\n' +
+    'Per favore risponda con:\n' +
+    '1️⃣ per *Officina* 🔧\n' +
+    '2️⃣ per *Noleggio* 🚐\n' +
+    '3️⃣ per *Vendita auto* 🚗\n' +
+    '4️⃣ per *Trasporto veicoli* 🚛\n' +
+    '5️⃣ per *Contatto diretto / Responsabile* 📞\n' +
+    '6️⃣ per *Parcheggio / Sosta* 🅿️'
+  );
+}
+
+function buildCustomerConfirmation(intent, profileName, extra = {}) {
   const customerName = formatCustomerName(profileName);
 
   if (intent === 'officina') {
@@ -306,11 +462,22 @@ function buildCustomerConfirmation(intent, profileName) {
   }
 
   if (intent === 'noleggio') {
+    const datesPart =
+      extra.startLabel && extra.endLabel
+        ? `\nPeriodo richiesto: *dal ${extra.startLabel} al ${extra.endLabel}* (${extra.days} giorni).`
+        : '';
+
+    const depositPart =
+      extra.paymentLink && extra.depositCents
+        ? `\n\nPer confermare in autonomia può versare la *caparra* di € ${eurosFromCents(extra.depositCents)} qui:\n${extra.paymentLink}`
+        : '';
+
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
-      'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
-      `Per prenotare direttamente può usare anche questo link:\n${LINK_NOLEGGIO}`
+      'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.' +
+      datesPart +
+      '\nSarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.' +
+      depositPart
     );
   }
 
@@ -339,11 +506,26 @@ function buildCustomerConfirmation(intent, profileName) {
   }
 
   if (intent === 'parcheggio_sosta') {
+    const amountLabel = extra.amountCents
+      ? `\n\n*Importo calcolato:* € ${eurosFromCents(extra.amountCents)}`
+      : '';
+
+    const periodLabel =
+      extra.startLabel && extra.endLabel
+        ? `\n*Periodo richiesto:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
+        : '';
+
+    const paymentPart = extra.paymentLink
+      ? `\n\nPer confermare in autonomia può effettuare il pagamento qui:\n${extra.paymentLink}`
+      : '\n\nIl nostro staff le invierà conferma e modalità di pagamento al più presto.';
+
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
-      'La sua richiesta per il servizio *Parcheggio / Sosta* è stata registrata correttamente e inoltrata al nostro staff.\n' +
-      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
-      'Se desidera, in un secondo momento potremo anche inviarle un *link di pagamento* per confermare la prenotazione.'
+      'La sua richiesta per il servizio *Parcheggio / Sosta* è stata registrata correttamente.' +
+      periodLabel +
+      amountLabel +
+      paymentPart +
+      '\n\nSarà ricontattato al bisogno *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
@@ -354,23 +536,116 @@ function buildCustomerConfirmation(intent, profileName) {
   );
 }
 
-function buildInvalidChoiceMessage() {
-  return (
-    'Scelta non riconosciuta.\n\n' +
-    'Per favore risponda con:\n' +
-    '1️⃣ per *Officina* 🔧\n' +
-    '2️⃣ per *Noleggio* 🚐\n' +
-    '3️⃣ per *Vendita auto* 🚗\n' +
-    '4️⃣ per *Trasporto veicoli* 🚛\n' +
-    '5️⃣ per *Contatto diretto / Responsabile* 📞\n' +
-    '6️⃣ per *Parcheggio / Sosta* 🅿️'
+// =========================
+// CALCOLI
+// =========================
+function computeSostaAmountCents(answers) {
+  const dateRange = extractDateRange(answers[1]);
+  const giorni = dateRange?.days || 1;
+  const corrente = isYes(answers[2]);
+  const acqua = isYes(answers[3]);
+
+  let total = giorni * SOSTA_PRICE_PER_DAY_CENTS;
+
+  if (corrente) total += SOSTA_CORRENTE_EXTRA_CENTS;
+  if (acqua) total += SOSTA_ACQUA_EXTRA_CENTS;
+
+  return {
+    giorni,
+    corrente,
+    acqua,
+    totalCents: total,
+    startLabel: dateRange?.startLabel || '',
+    endLabel: dateRange?.endLabel || ''
+  };
+}
+
+// =========================
+// NEXI
+// =========================
+function canUseNexi() {
+  return Boolean(
+    NEXI_API_KEY &&
+    NEXI_RESULT_URL &&
+    NEXI_CANCEL_URL
   );
+}
+
+async function createNexiPayByLink({
+  customerName,
+  customerWhatsapp,
+  amountCents,
+  description
+}) {
+  const correlationId = crypto.randomUUID();
+  const orderId = buildShortOrderId('DP');
+  const expirationDate = addDaysIso(7);
+
+  const payload = {
+    order: {
+      orderId,
+      amount: String(amountCents),
+      currency: 'EUR',
+      description: description
+    },
+    paymentSession: {
+      actionType: 'PAY',
+      amount: String(amountCents)
+    },
+    language: 'ita',
+    resultUrl: NEXI_RESULT_URL,
+    cancelUrl: NEXI_CANCEL_URL,
+    expirationDate
+  };
+
+  if (customerName) {
+    payload.customerInfo = {
+      cardHolderName: customerName
+    };
+  }
+
+  if (customerWhatsapp) {
+    payload.order.customField = customerWhatsapp;
+  }
+
+  if (NEXI_NOTIFICATION_URL) {
+    payload.notificationUrl = NEXI_NOTIFICATION_URL;
+  }
+
+  const response = await fetch(`${NEXI_BASE_URL}/v1/orders/paybylink`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Key': NEXI_API_KEY,
+      'Correlation-Id': correlationId
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message =
+      data?.errors?.map(e => e.description).join(' | ') ||
+      data?.title ||
+      `Errore Nexi ${response.status}`;
+
+    throw new Error(message);
+  }
+
+  return {
+    orderId,
+    link: data?.paymentLink?.link || '',
+    linkId: data?.paymentLink?.linkId || '',
+    status: data?.paymentLink?.status || '',
+    expirationDate: data?.paymentLink?.expirationDate || expirationDate
+  };
 }
 
 // =========================
 // MESSAGGIO INTERNO
 // =========================
-function buildInternalMessage(session, incomingFrom, profileName) {
+function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
   const intent = session.intent;
   const reparto = getReparto(intent);
   const a = session.answers;
@@ -390,13 +665,29 @@ function buildInternalMessage(session, incomingFrom, profileName) {
   }
 
   if (intent === 'noleggio') {
+    const dateRange = extractDateRange(a[1]);
+    const periodLine = dateRange
+      ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
+      : `Date richieste: ${a[1] || '-'}\n`;
+
+    const depositLine =
+      extra.depositCents
+        ? `Caparra proposta: € ${eurosFromCents(extra.depositCents)}\n`
+        : '';
+
+    const linkLine =
+      extra.paymentLink
+        ? `Link pagamento Nexi: ${extra.paymentLink}\n`
+        : '';
+
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Mezzo richiesto: ${a[0] || '-'}\n` +
-      `Data inizio: ${a[1] || '-'}\n` +
-      `Data fine: ${a[2] || '-'}`
+      periodLine +
+      depositLine +
+      linkLine
     );
   }
 
@@ -433,15 +724,30 @@ function buildInternalMessage(session, incomingFrom, profileName) {
   }
 
   if (intent === 'parcheggio_sosta') {
+    const dateRange = extractDateRange(a[1]);
+
+    const periodLine = dateRange
+      ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
+      : `Date richieste: ${a[1] || '-'}\n`;
+
+    const amountLine = extra.amountCents
+      ? `Importo calcolato: € ${eurosFromCents(extra.amountCents)}\n`
+      : '';
+
+    const linkLine = extra.paymentLink
+      ? `Link pagamento Nexi: ${extra.paymentLink}\n`
+      : '';
+
     return (
       `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Tipo di mezzo: ${a[0] || '-'}\n` +
-      `Data arrivo: ${a[1] || '-'}\n` +
-      `Giorni di sosta: ${a[2] || '-'}\n` +
-      `Corrente richiesta: ${a[3] || '-'}\n` +
-      `Acqua richiesta: ${a[4] || '-'}`
+      periodLine +
+      `Corrente richiesta: ${yesNoLabel(a[2])}\n` +
+      `Acqua richiesta: ${yesNoLabel(a[3])}\n` +
+      amountLine +
+      linkLine
     );
   }
 
@@ -501,7 +807,62 @@ function isExpired(session) {
 }
 
 // =========================
-// WEBHOOK
+// VALIDAZIONI RISPOSTE
+// =========================
+function validateAnswer(session, answer) {
+  const intent = session.intent;
+  const idx = session.questionIndex;
+  const text = cleanText(answer);
+
+  if (intent === 'noleggio') {
+    if (idx === 1) {
+      const range = extractDateRange(text);
+      if (!range) {
+        return {
+          valid: false,
+          message:
+            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
+        };
+      }
+    }
+  }
+
+  if (intent === 'parcheggio_sosta') {
+    if (idx === 1) {
+      const range = extractDateRange(text);
+      if (!range) {
+        return {
+          valid: false,
+          message:
+            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
+        };
+      }
+    }
+
+    if (idx === 2 || idx === 3) {
+      const yn = yesNoLabel(text);
+      if (yn !== 'SÌ' && yn !== 'NO') {
+        return {
+          valid: false,
+          message: 'Per favore risponda solo con *sì* oppure *no*.'
+        };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+// =========================
+// WEBHOOK NEXI
+// =========================
+app.post('/nexi-notify', async (req, res) => {
+  console.log('Notifica Nexi ricevuta:', JSON.stringify(req.body || {}, null, 2));
+  res.status(200).send('OK');
+});
+
+// =========================
+// WEBHOOK WHATSAPP
 // =========================
 app.post('/whatsapp', async (req, res) => {
   const incomingText = cleanText(req.body.Body);
@@ -580,6 +941,14 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (session.state === 'questions') {
+      const validation = validateAnswer(session, incomingText);
+
+      if (!validation.valid) {
+        twiml.message(validation.message);
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
       session.answers.push(incomingText);
       session.questionIndex += 1;
 
@@ -589,16 +958,133 @@ app.post('/whatsapp', async (req, res) => {
         return res.end(twiml.toString());
       }
 
-      const internalMessage = buildInternalMessage(
-        session,
-        incomingFrom,
-        profileName
-      );
+      let confirmationMessage = '';
+      let internalMessage = '';
+      let internalExtra = {};
+
+      if (session.intent === 'parcheggio_sosta') {
+        const quote = computeSostaAmountCents(session.answers);
+
+        internalExtra.amountCents = quote.totalCents;
+        internalExtra.startLabel = quote.startLabel;
+        internalExtra.endLabel = quote.endLabel;
+        internalExtra.days = quote.giorni;
+
+        if (canUseNexi()) {
+          try {
+            const payment = await createNexiPayByLink({
+              customerName: formatCustomerName(profileName),
+              customerWhatsapp: formatWhatsappNumber(incomingFrom),
+              amountCents: quote.totalCents,
+              description: `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`
+            });
+
+            internalExtra.paymentLink = payment.link;
+
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              {
+                amountCents: quote.totalCents,
+                paymentLink: payment.link,
+                startLabel: quote.startLabel,
+                endLabel: quote.endLabel,
+                days: quote.giorni
+              }
+            );
+          } catch (nexiError) {
+            console.error('Errore creazione link Nexi:', nexiError.message);
+
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              {
+                amountCents: quote.totalCents,
+                startLabel: quote.startLabel,
+                endLabel: quote.endLabel,
+                days: quote.giorni
+              }
+            );
+          }
+        } else {
+          confirmationMessage = buildCustomerConfirmation(
+            session.intent,
+            profileName,
+            {
+              amountCents: quote.totalCents,
+              startLabel: quote.startLabel,
+              endLabel: quote.endLabel,
+              days: quote.giorni
+            }
+          );
+        }
+
+        internalMessage = buildInternalMessage(
+          session,
+          incomingFrom,
+          profileName,
+          internalExtra
+        );
+      } else if (session.intent === 'noleggio') {
+        const dateRange = extractDateRange(session.answers[1]);
+
+        if (dateRange) {
+          internalExtra.startLabel = dateRange.startLabel;
+          internalExtra.endLabel = dateRange.endLabel;
+          internalExtra.days = dateRange.days;
+        }
+
+        if (NOLEGGIO_DEPOSIT_ENABLED && NOLEGGIO_DEPOSIT_CENTS > 0 && canUseNexi()) {
+          try {
+            const payment = await createNexiPayByLink({
+              customerName: formatCustomerName(profileName),
+              customerWhatsapp: formatWhatsappNumber(incomingFrom),
+              amountCents: NOLEGGIO_DEPOSIT_CENTS,
+              description: `Caparra noleggio ${session.answers[0] || ''}`
+            });
+
+            internalExtra.paymentLink = payment.link;
+            internalExtra.depositCents = NOLEGGIO_DEPOSIT_CENTS;
+          } catch (nexiError) {
+            console.error('Errore creazione link Nexi noleggio:', nexiError.message);
+          }
+        }
+
+        internalMessage = buildInternalMessage(
+          session,
+          incomingFrom,
+          profileName,
+          internalExtra
+        );
+
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName,
+          {
+            startLabel: internalExtra.startLabel,
+            endLabel: internalExtra.endLabel,
+            days: internalExtra.days,
+            paymentLink: internalExtra.paymentLink,
+            depositCents: internalExtra.depositCents
+          }
+        );
+      } else {
+        internalMessage = buildInternalMessage(
+          session,
+          incomingFrom,
+          profileName
+        );
+
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName
+        );
+      }
 
       const recipients = getRecipients(session.intent);
       await sendInternalNotification(recipients, internalMessage);
 
-      twiml.message(buildCustomerConfirmation(session.intent, profileName));
+      twiml.message(confirmationMessage);
       resetSession(incomingFrom);
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });

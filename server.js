@@ -31,13 +31,16 @@ const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
 // NEXI CLASSICO (ALIAS + MAC)
 // =========================
 const NEXI_ENV = (process.env.NEXI_ENV || 'test').toLowerCase();
-const NEXI_ALIAS = process.env.NEXI_ALIAS || '';
+const NEXI_API_KEY_ALIAS = process.env.NEXI_ALIAS || '';
 const NEXI_MAC_KEY = process.env.NEXI_MAC_KEY || '';
+const NEXI_TIMEOUT_HOURS = parseInt(process.env.NEXI_TIMEOUT_HOURS || '4', 10);
 
-const NEXI_PAYMENT_BASE_URL =
+const NEXI_BASE_URL =
   NEXI_ENV === 'prod'
-    ? 'https://ecommerce.nexi.it/ecomm/ecomm/DispatcherServlet'
-    : 'https://int-ecommerce.nexi.it/ecomm/ecomm/DispatcherServlet';
+    ? 'https://ecommerce.nexi.it'
+    : 'https://int-ecommerce.nexi.it';
+
+const NEXI_PAYMAIL_ENDPOINT = `${NEXI_BASE_URL}/ecomm/api/bo/richiestaPayMail`;
 
 // =========================
 // PREZZI
@@ -326,16 +329,6 @@ function detectServiceSwitch(text, currentIntent) {
 function getRecipients(intent) {
   if (intent === 'officina') return OFFICINA_NUMBERS;
   return GENERAL_NUMBERS;
-}
-
-function getReparto(intent) {
-  if (intent === 'officina') return 'OFFICINA';
-  if (intent === 'noleggio') return 'NOLEGGIO';
-  if (intent === 'vendita') return 'VENDITA';
-  if (intent === 'trasporto') return 'TRASPORTO';
-  if (intent === 'contatto_diretto') return 'CONTATTO DIRETTO';
-  if (intent === 'parcheggio_sosta') return 'PARCHEGGIO / SOSTA';
-  return 'GENERICO';
 }
 
 // =========================
@@ -630,46 +623,109 @@ function computeNoleggio(answers) {
 }
 
 // =========================
-// NEXI MAC
+// NEXI PAY-BY-LINK POST JSON
 // =========================
-function canUseNexiMac() {
-  return Boolean(NEXI_ALIAS && NEXI_MAC_KEY);
+function canUseNexi() {
+  return Boolean(NEXI_API_KEY_ALIAS && NEXI_MAC_KEY);
 }
 
-function generateNexiMac({ alias, codiceTransazione, importo, timeStamp }) {
-  const macString =
-    `apiKey=${alias}` +
+function generateNexiRequestMac({ apiKey, codiceTransazione, importo, timeStamp }) {
+  const source =
+    `apiKey=${apiKey}` +
     `codiceTransazione=${codiceTransazione}` +
     `importo=${importo}` +
     `timeStamp=${timeStamp}` +
     NEXI_MAC_KEY;
 
-  return crypto.createHash('sha1').update(macString).digest('hex');
+  return crypto.createHash('sha1').update(source).digest('hex');
 }
 
-function createNexiPayLinkMac(amountCents, description) {
+function generateNexiResponseMac({ esito, idOperazione, timeStamp }) {
+  const source =
+    `esito=${esito}` +
+    `idOperazione=${idOperazione}` +
+    `timeStamp=${timeStamp}` +
+    NEXI_MAC_KEY;
+
+  return crypto.createHash('sha1').update(source).digest('hex');
+}
+
+async function createNexiPayMailLink({
+  amountCents,
+  description,
+  customerWhatsapp
+}) {
   const codiceTransazione = buildShortOrderId('DP');
   const timeStamp = Date.now().toString();
 
-  const mac = generateNexiMac({
-    alias: NEXI_ALIAS,
-    codiceTransazione,
-    importo: String(amountCents),
-    timeStamp
-  });
-
-  const params = new URLSearchParams({
-    apiKey: NEXI_ALIAS,
+  const payload = {
+    apiKey: NEXI_API_KEY_ALIAS,
     codiceTransazione,
     importo: String(amountCents),
     timeStamp,
-    mac,
-    descrizione: description
+    mac: generateNexiRequestMac({
+      apiKey: NEXI_API_KEY_ALIAS,
+      codiceTransazione,
+      importo: String(amountCents),
+      timeStamp
+    }),
+    timeout: String(NEXI_TIMEOUT_HOURS),
+    url: `${APP_BASE_URL}/nexi/result`,
+    parametriAggiuntivi: {
+      source: 'whatsapp_bot',
+      description: description || '',
+      customer_whatsapp: customerWhatsapp || ''
+    }
+  };
+
+  const response = await fetch(NEXI_PAYMAIL_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(`Errore HTTP Nexi: ${response.status}`);
+  }
+
+  if (!data || !data.esito) {
+    throw new Error('Risposta Nexi non valida');
+  }
+
+  if (data.esito !== 'OK') {
+    const detail =
+      data?.errore?.messaggio ||
+      data?.errore?.description ||
+      data?.errore?.codice ||
+      'Operazione Nexi non riuscita';
+    throw new Error(detail);
+  }
+
+  if (!data.payMailUrl) {
+    throw new Error('Link pagamento Nexi non restituito');
+  }
+
+  if (data.idOperazione && data.timeStamp && data.mac) {
+    const expectedMac = generateNexiResponseMac({
+      esito: data.esito,
+      idOperazione: data.idOperazione,
+      timeStamp: data.timeStamp
+    });
+
+    if (expectedMac !== data.mac) {
+      throw new Error('MAC risposta Nexi non valido');
+    }
+  }
 
   return {
     codiceTransazione,
-    link: `${NEXI_PAYMENT_BASE_URL}?${params.toString()}`
+    payMailUrl: data.payMailUrl,
+    idOperazione: data.idOperazione || ''
   };
 }
 
@@ -677,15 +733,13 @@ function createNexiPayLinkMac(amountCents, description) {
 // MESSAGGI INTERNI
 // =========================
 function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
-  const intent = session.intent;
-  const reparto = getReparto(intent);
   const a = session.answers;
   const customerName = formatCustomerName(profileName);
   const whatsappNumber = formatWhatsappNumber(incomingFrom);
 
-  if (intent === 'officina') {
+  if (session.intent === 'officina') {
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA OFFICINA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Modello veicolo: ${a[0] || '-'}\n` +
@@ -695,45 +749,32 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     );
   }
 
-  if (intent === 'noleggio') {
+  if (session.intent === 'noleggio') {
     const dateRange = extractDateRange(a[1]);
     const periodLine = dateRange
       ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
       : `Date richieste: ${a[1] || '-'}\n`;
 
-    const priceLine =
-      extra.baseTotalExVat !== undefined
-        ? `Noleggio: € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%\n` +
-          `Totale con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
-          `Km inclusi: ${extra.kmIncluded} km\n` +
-          `Extra km: € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km\n`
-        : '';
-
-    const depositLine =
-      extra.depositCents
-        ? `Caparra richiesta: € ${eurosFromCents(extra.depositCents)}\n`
-        : '';
-
-    const linkLine =
-      extra.paymentLink
-        ? `Link pagamento Nexi: ${extra.paymentLink}\n`
-        : '';
-
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA NOLEGGIO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Mezzo richiesto: ${a[0] || '-'}\n` +
       periodLine +
-      priceLine +
-      depositLine +
-      linkLine
+      (extra.baseTotalExVat !== undefined
+        ? `Noleggio: € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%\n` +
+          `Totale con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
+          `Km inclusi: ${extra.kmIncluded} km\n` +
+          `Extra km: € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km\n`
+        : '') +
+      (extra.depositCents ? `Caparra richiesta: € ${eurosFromCents(extra.depositCents)}\n` : '') +
+      (extra.paymentLink ? `Link pagamento Nexi: ${extra.paymentLink}\n` : '')
     );
   }
 
-  if (intent === 'vendita') {
+  if (session.intent === 'vendita') {
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA VENDITA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Auto cercata: ${a[0] || '-'}\n` +
@@ -742,9 +783,9 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     );
   }
 
-  if (intent === 'trasporto') {
+  if (session.intent === 'trasporto') {
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA TRASPORTO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Veicolo da trasportare: ${a[0] || '-'}\n` +
@@ -754,40 +795,31 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     );
   }
 
-  if (intent === 'contatto_diretto') {
+  if (session.intent === 'contatto_diretto') {
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA CONTATTO DIRETTO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Motivo richiesta: ${a[0] || '-'}`
     );
   }
 
-  if (intent === 'parcheggio_sosta') {
+  if (session.intent === 'parcheggio_sosta') {
     const dateRange = extractDateRange(a[1]);
-
     const periodLine = dateRange
       ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
       : `Date richieste: ${a[1] || '-'}\n`;
 
-    const amountLine = extra.amountCents
-      ? `Importo calcolato: € ${eurosFromCents(extra.amountCents)}\n`
-      : '';
-
-    const linkLine = extra.paymentLink
-      ? `Link pagamento Nexi: ${extra.paymentLink}\n`
-      : '';
-
     return (
-      `🔔 NUOVA RICHIESTA ${reparto}\n\n` +
+      `🔔 NUOVA RICHIESTA PARCHEGGIO / SOSTA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
       `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Tipo di mezzo: ${a[0] || '-'}\n` +
       periodLine +
       `Corrente richiesta: ${yesNoLabel(a[2])}\n` +
       `Acqua richiesta: ${yesNoLabel(a[3])}\n` +
-      amountLine +
-      linkLine
+      (extra.amountCents ? `Importo calcolato: € ${eurosFromCents(extra.amountCents)}\n` : '') +
+      (extra.paymentLink ? `Link pagamento Nexi: ${extra.paymentLink}\n` : '')
     );
   }
 
@@ -803,10 +835,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
 // =========================
 async function sendInternalNotification(numbers, text) {
   for (const to of numbers) {
-    if (to === TWILIO_WHATSAPP_NUMBER) {
-      console.log('Saltato invio al numero del bot:', to);
-      continue;
-    }
+    if (to === TWILIO_WHATSAPP_NUMBER) continue;
 
     try {
       const result = await client.messages.create({
@@ -870,16 +899,14 @@ function validateAnswer(session, answer) {
   const idx = session.questionIndex;
   const text = cleanText(answer);
 
-  if (intent === 'noleggio') {
-    if (idx === 1) {
-      const range = extractDateRange(text);
-      if (!range) {
-        return {
-          valid: false,
-          message:
-            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
-        };
-      }
+  if (intent === 'noleggio' && idx === 1) {
+    const range = extractDateRange(text);
+    if (!range) {
+      return {
+        valid: false,
+        message:
+          'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
+      };
     }
   }
 
@@ -918,19 +945,11 @@ app.get('/nexi/result', (req, res) => {
       <head>
         <meta charset="utf-8" />
         <title>Pagamento completato</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-          .box { max-width: 700px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 30px; }
-          h1 { color: #1f7a1f; }
-        </style>
       </head>
-      <body>
-        <div class="box">
-          <h1>Pagamento completato ✅</h1>
-          <p>Grazie. Il pagamento risulta concluso.</p>
-          <p>Riceverà conferma dal nostro staff nel più breve tempo possibile.</p>
-          <p>Può chiudere questa pagina.</p>
-        </div>
+      <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+        <h1>Pagamento completato ✅</h1>
+        <p>Grazie. Il pagamento risulta concluso.</p>
+        <p>Riceverà conferma dal nostro staff nel più breve tempo possibile.</p>
       </body>
     </html>
   `);
@@ -942,19 +961,10 @@ app.get('/nexi/cancel', (req, res) => {
       <head>
         <meta charset="utf-8" />
         <title>Pagamento annullato</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-          .box { max-width: 700px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; padding: 30px; }
-          h1 { color: #b33a3a; }
-        </style>
       </head>
-      <body>
-        <div class="box">
-          <h1>Pagamento annullato</h1>
-          <p>Il pagamento non è stato completato.</p>
-          <p>Se desidera, può tornare su WhatsApp e richiedere nuovamente il link.</p>
-          <p>Può chiudere questa pagina.</p>
-        </div>
+      <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
+        <h1>Pagamento annullato</h1>
+        <p>Il pagamento non è stato completato.</p>
       </body>
     </html>
   `);
@@ -998,12 +1008,11 @@ app.post('/whatsapp', async (req, res) => {
       if (detectedIntent !== 'generico') {
         setSessionIntent(session, detectedIntent);
 
-        const firstMessage =
+        twiml.message(
           buildStartMessageByIntent(detectedIntent, profileName) +
-          '\n\n' +
-          session.questions[0];
-
-        twiml.message(firstMessage);
+            '\n\n' +
+            session.questions[0]
+        );
       } else {
         twiml.message(buildWelcomeMenu(profileName));
       }
@@ -1023,12 +1032,12 @@ app.post('/whatsapp', async (req, res) => {
 
       setSessionIntent(session, chosenIntent);
 
-      const message =
+      twiml.message(
         buildStartMessageByIntent(chosenIntent, profileName) +
-        '\n\n' +
-        session.questions[0];
+          '\n\n' +
+          session.questions[0]
+      );
 
-      twiml.message(message);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -1051,7 +1060,6 @@ app.post('/whatsapp', async (req, res) => {
       }
 
       const validation = validateAnswer(session, incomingText);
-
       if (!validation.valid) {
         twiml.message(validation.message);
         res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1067,45 +1075,34 @@ app.post('/whatsapp', async (req, res) => {
         return res.end(twiml.toString());
       }
 
-      let confirmationMessage = '';
-      let internalMessage = '';
       let internalExtra = {};
+      let confirmationMessage = '';
 
       if (session.intent === 'parcheggio_sosta') {
         const quote = computeSostaAmountCents(session.answers);
 
-        internalExtra.amountCents = quote.totalCents;
-        internalExtra.startLabel = quote.startLabel;
-        internalExtra.endLabel = quote.endLabel;
-        internalExtra.days = quote.giorni;
+        internalExtra = {
+          amountCents: quote.totalCents,
+          startLabel: quote.startLabel,
+          endLabel: quote.endLabel,
+          days: quote.giorni
+        };
 
-        if (canUseNexiMac()) {
+        if (canUseNexi()) {
           try {
-            const payment = createNexiPayLinkMac(
-              quote.totalCents,
-              `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`
-            );
-            internalExtra.paymentLink = payment.link;
+            const payment = await createNexiPayMailLink({
+              amountCents: quote.totalCents,
+              description: `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`,
+              customerWhatsapp: formatWhatsappNumber(incomingFrom)
+            });
+            internalExtra.paymentLink = payment.payMailUrl;
           } catch (error) {
-            console.error('Errore creazione link Nexi sosta:', error.message);
+            console.error('Errore Nexi sosta:', error.message);
           }
         }
 
         confirmationMessage = buildCustomerConfirmation(
           session.intent,
-          profileName,
-          {
-            amountCents: quote.totalCents,
-            paymentLink: internalExtra.paymentLink,
-            startLabel: quote.startLabel,
-            endLabel: quote.endLabel,
-            days: quote.giorni
-          }
-        );
-
-        internalMessage = buildInternalMessage(
-          session,
-          incomingFrom,
           profileName,
           internalExtra
         );
@@ -1113,36 +1110,31 @@ app.post('/whatsapp', async (req, res) => {
         const quote = computeNoleggio(session.answers);
 
         if (quote) {
-          internalExtra.startLabel = quote.startLabel;
-          internalExtra.endLabel = quote.endLabel;
-          internalExtra.days = quote.giorni;
-          internalExtra.baseTotalExVat = quote.baseTotalExVat;
-          internalExtra.baseTotalIncVat = quote.baseTotalIncVat;
-          internalExtra.kmIncluded = quote.kmIncluded;
-          internalExtra.extraKmExVat = quote.extraKmExVat;
-          internalExtra.extraKmIncVat = quote.extraKmIncVat;
+          internalExtra = {
+            startLabel: quote.startLabel,
+            endLabel: quote.endLabel,
+            days: quote.giorni,
+            baseTotalExVat: quote.baseTotalExVat,
+            baseTotalIncVat: quote.baseTotalIncVat,
+            kmIncluded: quote.kmIncluded,
+            extraKmExVat: quote.extraKmExVat,
+            extraKmIncVat: quote.extraKmIncVat,
+            depositCents: NOLEGGIO_DEPOSIT_CENTS
+          };
         }
 
-        internalExtra.depositCents = NOLEGGIO_DEPOSIT_CENTS;
-
-        if (NOLEGGIO_DEPOSIT_ENABLED && NOLEGGIO_DEPOSIT_CENTS > 0 && canUseNexiMac()) {
+        if (NOLEGGIO_DEPOSIT_ENABLED && canUseNexi()) {
           try {
-            const payment = createNexiPayLinkMac(
-              NOLEGGIO_DEPOSIT_CENTS,
-              `Caparra noleggio ${session.answers[0] || ''}`
-            );
-            internalExtra.paymentLink = payment.link;
+            const payment = await createNexiPayMailLink({
+              amountCents: NOLEGGIO_DEPOSIT_CENTS,
+              description: `Caparra noleggio ${session.answers[0] || ''}`,
+              customerWhatsapp: formatWhatsappNumber(incomingFrom)
+            });
+            internalExtra.paymentLink = payment.payMailUrl;
           } catch (error) {
-            console.error('Errore creazione link Nexi noleggio:', error.message);
+            console.error('Errore Nexi noleggio:', error.message);
           }
         }
-
-        internalMessage = buildInternalMessage(
-          session,
-          incomingFrom,
-          profileName,
-          internalExtra
-        );
 
         confirmationMessage = buildCustomerConfirmation(
           session.intent,
@@ -1150,17 +1142,15 @@ app.post('/whatsapp', async (req, res) => {
           internalExtra
         );
       } else {
-        internalMessage = buildInternalMessage(
-          session,
-          incomingFrom,
-          profileName
-        );
-
-        confirmationMessage = buildCustomerConfirmation(
-          session.intent,
-          profileName
-        );
+        confirmationMessage = buildCustomerConfirmation(session.intent, profileName);
       }
+
+      const internalMessage = buildInternalMessage(
+        session,
+        incomingFrom,
+        profileName,
+        internalExtra
+      );
 
       const recipients = getRecipients(session.intent);
       await sendInternalNotification(recipients, internalMessage);

@@ -25,33 +25,19 @@ const GENERAL_NUMBERS = [
 const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
-// =========================
-// URL BASE APP
-// =========================
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
 
 // =========================
-// NEXI CONFIG
+// NEXI CLASSICO (ALIAS + MAC)
 // =========================
-const NEXI_ENV = (process.env.NEXI_ENV || 'sandbox').toLowerCase();
-const NEXI_API_KEY = process.env.NEXI_API_KEY || '';
+const NEXI_ENV = (process.env.NEXI_ENV || 'test').toLowerCase();
+const NEXI_ALIAS = process.env.NEXI_ALIAS || '';
+const NEXI_MAC_KEY = process.env.NEXI_MAC_KEY || '';
 
-const NEXI_BASE_URL =
+const NEXI_PAYMENT_BASE_URL =
   NEXI_ENV === 'prod'
-    ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api'
-    : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api';
-
-const NEXI_RESULT_URL =
-  process.env.NEXI_RESULT_URL ||
-  (APP_BASE_URL ? `${APP_BASE_URL}/nexi/result` : '');
-
-const NEXI_CANCEL_URL =
-  process.env.NEXI_CANCEL_URL ||
-  (APP_BASE_URL ? `${APP_BASE_URL}/nexi/cancel` : '');
-
-const NEXI_NOTIFICATION_URL =
-  process.env.NEXI_NOTIFICATION_URL ||
-  (APP_BASE_URL ? `${APP_BASE_URL}/nexi-notify` : '');
+    ? 'https://ecommerce.nexi.it/ecomm/ecomm/DispatcherServlet'
+    : 'https://int-ecommerce.nexi.it/ecomm/ecomm/DispatcherServlet';
 
 // =========================
 // PREZZI
@@ -103,10 +89,6 @@ function formatEuroNumber(value) {
   return Number(value || 0).toFixed(2).replace('.', ',');
 }
 
-function centsFromEuro(value) {
-  return Math.round(Number(value || 0) * 100);
-}
-
 function yesNoLabel(value) {
   const msg = normalize(value);
   if (['si', 'sì', 'yes', 'y', 'ok', 'certo'].includes(msg)) return 'SÌ';
@@ -122,12 +104,6 @@ function buildShortOrderId(prefix = 'DP') {
   const ts = Date.now().toString().slice(-10);
   const rnd = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
   return `${prefix}${ts}${rnd}`.slice(0, 18);
-}
-
-function addDaysIso(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 function formatDateIT(dateObj) {
@@ -317,6 +293,36 @@ function intentFromMenuChoice(text) {
   return detected !== 'generico' ? detected : null;
 }
 
+function detectServiceSwitch(text, currentIntent) {
+  const msg = normalize(text);
+
+  if (msg === 'menu' || msg === 'reset') {
+    return 'menu';
+  }
+
+  const menuChoice = intentFromMenuChoice(msg);
+  if (menuChoice && menuChoice !== currentIntent) {
+    return menuChoice;
+  }
+
+  if (
+    msg.includes('ho sbagliato') ||
+    msg.includes('servizio sbagliato') ||
+    msg.includes('cambiare servizio') ||
+    msg.includes('non officina') ||
+    msg.includes('non noleggio') ||
+    msg.includes('non trasporto') ||
+    msg.includes('non vendita')
+  ) {
+    const detected = detectIntent(msg);
+    if (detected !== 'generico' && detected !== currentIntent) {
+      return detected;
+    }
+  }
+
+  return null;
+}
+
 function getRecipients(intent) {
   if (intent === 'officina') return OFFICINA_NUMBERS;
   return GENERAL_NUMBERS;
@@ -471,6 +477,15 @@ function buildInvalidChoiceMessage() {
   );
 }
 
+function buildServiceChangedMessage(intent, profileName) {
+  return (
+    'Perfetto, aggiorniamo subito il servizio richiesto.\n\n' +
+    buildStartMessageByIntent(intent, profileName) +
+    '\n\n' +
+    buildQuestions(intent)[0]
+  );
+}
+
 function buildCustomerConfirmation(intent, profileName, extra = {}) {
   const customerName = formatCustomerName(profileName);
 
@@ -615,80 +630,46 @@ function computeNoleggio(answers) {
 }
 
 // =========================
-// NEXI
+// NEXI MAC
 // =========================
-function canUseNexi() {
-  return Boolean(NEXI_API_KEY && NEXI_RESULT_URL && NEXI_CANCEL_URL);
+function canUseNexiMac() {
+  return Boolean(NEXI_ALIAS && NEXI_MAC_KEY);
 }
 
-async function createNexiPayByLink({
-  customerName,
-  customerWhatsapp,
-  amountCents,
-  description
-}) {
-  const correlationId = crypto.randomUUID();
-  const orderId = buildShortOrderId('DP');
-  const expirationDate = addDaysIso(7);
+function generateNexiMac({ alias, codiceTransazione, importo, timeStamp }) {
+  const macString =
+    `apiKey=${alias}` +
+    `codiceTransazione=${codiceTransazione}` +
+    `importo=${importo}` +
+    `timeStamp=${timeStamp}` +
+    NEXI_MAC_KEY;
 
-  const payload = {
-    order: {
-      orderId,
-      amount: String(amountCents),
-      currency: 'EUR',
-      description
-    },
-    paymentSession: {
-      actionType: 'PAY',
-      amount: String(amountCents)
-    },
-    language: 'ita',
-    resultUrl: NEXI_RESULT_URL,
-    cancelUrl: NEXI_CANCEL_URL,
-    expirationDate
-  };
+  return crypto.createHash('sha1').update(macString).digest('hex');
+}
 
-  if (customerName) {
-    payload.customerInfo = {
-      cardHolderName: customerName
-    };
-  }
+function createNexiPayLinkMac(amountCents, description) {
+  const codiceTransazione = buildShortOrderId('DP');
+  const timeStamp = Date.now().toString();
 
-  if (customerWhatsapp) {
-    payload.order.customField = customerWhatsapp;
-  }
-
-  if (NEXI_NOTIFICATION_URL) {
-    payload.notificationUrl = NEXI_NOTIFICATION_URL;
-  }
-
-  const response = await fetch(`${NEXI_BASE_URL}/v1/orders/paybylink`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Api-Key': NEXI_API_KEY,
-      'Correlation-Id': correlationId
-    },
-    body: JSON.stringify(payload)
+  const mac = generateNexiMac({
+    alias: NEXI_ALIAS,
+    codiceTransazione,
+    importo: String(amountCents),
+    timeStamp
   });
 
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message =
-      data?.errors?.map(e => e.description).join(' | ') ||
-      data?.title ||
-      `Errore Nexi ${response.status}`;
-
-    throw new Error(message);
-  }
+  const params = new URLSearchParams({
+    apiKey: NEXI_ALIAS,
+    codiceTransazione,
+    importo: String(amountCents),
+    timeStamp,
+    mac,
+    descrizione: description
+  });
 
   return {
-    orderId,
-    link: data?.paymentLink?.link || '',
-    linkId: data?.paymentLink?.linkId || '',
-    status: data?.paymentLink?.status || '',
-    expirationDate: data?.paymentLink?.expirationDate || expirationDate
+    codiceTransazione,
+    link: `${NEXI_PAYMENT_BASE_URL}?${params.toString()}`
   };
 }
 
@@ -867,6 +848,15 @@ function createSession(phone, profileName) {
   return sessions[phone];
 }
 
+function setSessionIntent(session, intent) {
+  session.intent = intent;
+  session.questions = buildQuestions(intent);
+  session.state = 'questions';
+  session.questionIndex = 0;
+  session.answers = [];
+  session.createdAt = Date.now();
+}
+
 function isExpired(session) {
   const THIRTY_MINUTES = 30 * 60 * 1000;
   return Date.now() - session.createdAt > THIRTY_MINUTES;
@@ -920,7 +910,7 @@ function validateAnswer(session, answer) {
 }
 
 // =========================
-// ROUTE NEXI
+// ROUTE INFO
 // =========================
 app.get('/nexi/result', (req, res) => {
   res.send(`
@@ -970,11 +960,6 @@ app.get('/nexi/cancel', (req, res) => {
   `);
 });
 
-app.post('/nexi-notify', async (req, res) => {
-  console.log('Notifica Nexi ricevuta:', JSON.stringify(req.body || {}, null, 2));
-  res.status(200).send('OK');
-});
-
 // =========================
 // WEBHOOK WHATSAPP
 // =========================
@@ -1011,10 +996,7 @@ app.post('/whatsapp', async (req, res) => {
       const detectedIntent = detectIntent(incomingText);
 
       if (detectedIntent !== 'generico') {
-        session.intent = detectedIntent;
-        session.questions = buildQuestions(detectedIntent);
-        session.state = 'questions';
-        session.questionIndex = 0;
+        setSessionIntent(session, detectedIntent);
 
         const firstMessage =
           buildStartMessageByIntent(detectedIntent, profileName) +
@@ -1039,10 +1021,7 @@ app.post('/whatsapp', async (req, res) => {
         return res.end(twiml.toString());
       }
 
-      session.intent = chosenIntent;
-      session.questions = buildQuestions(chosenIntent);
-      session.state = 'questions';
-      session.questionIndex = 0;
+      setSessionIntent(session, chosenIntent);
 
       const message =
         buildStartMessageByIntent(chosenIntent, profileName) +
@@ -1055,6 +1034,22 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (session.state === 'questions') {
+      const switchedIntent = detectServiceSwitch(incomingText, session.intent);
+
+      if (switchedIntent === 'menu') {
+        resetSession(incomingFrom);
+        twiml.message(buildWelcomeMenu(profileName));
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      if (switchedIntent && switchedIntent !== session.intent) {
+        setSessionIntent(session, switchedIntent);
+        twiml.message(buildServiceChangedMessage(switchedIntent, profileName));
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
       const validation = validateAnswer(session, incomingText);
 
       if (!validation.valid) {
@@ -1084,54 +1079,29 @@ app.post('/whatsapp', async (req, res) => {
         internalExtra.endLabel = quote.endLabel;
         internalExtra.days = quote.giorni;
 
-        if (canUseNexi()) {
+        if (canUseNexiMac()) {
           try {
-            const payment = await createNexiPayByLink({
-              customerName: formatCustomerName(profileName),
-              customerWhatsapp: formatWhatsappNumber(incomingFrom),
-              amountCents: quote.totalCents,
-              description: `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`
-            });
-
+            const payment = createNexiPayLinkMac(
+              quote.totalCents,
+              `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`
+            );
             internalExtra.paymentLink = payment.link;
-
-            confirmationMessage = buildCustomerConfirmation(
-              session.intent,
-              profileName,
-              {
-                amountCents: quote.totalCents,
-                paymentLink: payment.link,
-                startLabel: quote.startLabel,
-                endLabel: quote.endLabel,
-                days: quote.giorni
-              }
-            );
-          } catch (nexiError) {
-            console.error('Errore creazione link Nexi:', nexiError.message);
-
-            confirmationMessage = buildCustomerConfirmation(
-              session.intent,
-              profileName,
-              {
-                amountCents: quote.totalCents,
-                startLabel: quote.startLabel,
-                endLabel: quote.endLabel,
-                days: quote.giorni
-              }
-            );
+          } catch (error) {
+            console.error('Errore creazione link Nexi sosta:', error.message);
           }
-        } else {
-          confirmationMessage = buildCustomerConfirmation(
-            session.intent,
-            profileName,
-            {
-              amountCents: quote.totalCents,
-              startLabel: quote.startLabel,
-              endLabel: quote.endLabel,
-              days: quote.giorni
-            }
-          );
         }
+
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName,
+          {
+            amountCents: quote.totalCents,
+            paymentLink: internalExtra.paymentLink,
+            startLabel: quote.startLabel,
+            endLabel: quote.endLabel,
+            days: quote.giorni
+          }
+        );
 
         internalMessage = buildInternalMessage(
           session,
@@ -1155,18 +1125,15 @@ app.post('/whatsapp', async (req, res) => {
 
         internalExtra.depositCents = NOLEGGIO_DEPOSIT_CENTS;
 
-        if (NOLEGGIO_DEPOSIT_ENABLED && NOLEGGIO_DEPOSIT_CENTS > 0 && canUseNexi()) {
+        if (NOLEGGIO_DEPOSIT_ENABLED && NOLEGGIO_DEPOSIT_CENTS > 0 && canUseNexiMac()) {
           try {
-            const payment = await createNexiPayByLink({
-              customerName: formatCustomerName(profileName),
-              customerWhatsapp: formatWhatsappNumber(incomingFrom),
-              amountCents: NOLEGGIO_DEPOSIT_CENTS,
-              description: `Caparra noleggio ${session.answers[0] || ''}`
-            });
-
+            const payment = createNexiPayLinkMac(
+              NOLEGGIO_DEPOSIT_CENTS,
+              `Caparra noleggio ${session.answers[0] || ''}`
+            );
             internalExtra.paymentLink = payment.link;
-          } catch (nexiError) {
-            console.error('Errore creazione link Nexi noleggio:', nexiError.message);
+          } catch (error) {
+            console.error('Errore creazione link Nexi noleggio:', error.message);
           }
         }
 

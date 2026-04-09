@@ -3,6 +3,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -26,6 +28,32 @@ const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
+
+// =========================
+// SESSIONI SU FILE
+// =========================
+const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
+
+function loadSessionsFromFile() {
+  try {
+    if (!fs.existsSync(SESSIONS_FILE)) return {};
+    const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.error('Errore caricamento sessions.json:', error.message);
+    return {};
+  }
+}
+
+function saveSessionsToFile() {
+  try {
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Errore salvataggio sessions.json:', error.message);
+  }
+}
+
+const sessions = loadSessionsFromFile();
 
 // =========================
 // NEXI CLASSICO (ALIAS + MAC)
@@ -61,8 +89,6 @@ const NOLEGGIO_EXTRA_KM_EUR = parseFloat(process.env.NOLEGGIO_EXTRA_KM_EUR || '0
 const NOLEGGIO_DEPOSIT_ENABLED =
   (process.env.NOLEGGIO_DEPOSIT_ENABLED || 'true').toLowerCase() === 'true';
 const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '50000', 10);
-
-const sessions = {};
 
 // =========================
 // FUNZIONI BASE
@@ -240,7 +266,8 @@ function detectIntent(text) {
     msg.includes('furgone') ||
     msg.includes('furgoni') ||
     msg.includes('auto a noleggio') ||
-    msg.includes('rent')
+    msg.includes('rent') ||
+    msg.includes('pulmino')
   ) {
     return 'noleggio';
   }
@@ -312,6 +339,11 @@ function detectServiceSwitch(text, currentIntent) {
     msg.includes('ho sbagliato') ||
     msg.includes('servizio sbagliato') ||
     msg.includes('cambiare servizio') ||
+    msg.includes('mi serve il noleggio') ||
+    msg.includes('mi serve officina') ||
+    msg.includes('mi serve trasporto') ||
+    msg.includes('mi serve parcheggio') ||
+    msg.includes('mi serve sosta') ||
     msg.includes('non officina') ||
     msg.includes('non noleggio') ||
     msg.includes('non trasporto') ||
@@ -862,6 +894,7 @@ async function sendInternalNotification(numbers, text) {
 // =========================
 function resetSession(phone) {
   delete sessions[phone];
+  saveSessionsToFile();
 }
 
 function createSession(phone, profileName) {
@@ -874,6 +907,7 @@ function createSession(phone, profileName) {
     answers: [],
     createdAt: Date.now()
   };
+  saveSessionsToFile();
   return sessions[phone];
 }
 
@@ -884,6 +918,7 @@ function setSessionIntent(session, intent) {
   session.questionIndex = 0;
   session.answers = [];
   session.createdAt = Date.now();
+  saveSessionsToFile();
 }
 
 function isExpired(session) {
@@ -942,10 +977,7 @@ function validateAnswer(session, answer) {
 app.get('/nexi/result', (req, res) => {
   res.send(`
     <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Pagamento completato</title>
-      </head>
+      <head><meta charset="utf-8" /><title>Pagamento completato</title></head>
       <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
         <h1>Pagamento completato ✅</h1>
         <p>Grazie. Il pagamento risulta concluso.</p>
@@ -958,10 +990,7 @@ app.get('/nexi/result', (req, res) => {
 app.get('/nexi/cancel', (req, res) => {
   res.send(`
     <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Pagamento annullato</title>
-      </head>
+      <head><meta charset="utf-8" /><title>Pagamento annullato</title></head>
       <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
         <h1>Pagamento annullato</h1>
         <p>Il pagamento non è stato completato.</p>
@@ -1068,6 +1097,8 @@ app.post('/whatsapp', async (req, res) => {
 
       session.answers.push(incomingText);
       session.questionIndex += 1;
+      session.createdAt = Date.now();
+      saveSessionsToFile();
 
       if (session.questionIndex < session.questions.length) {
         twiml.message(session.questions[session.questionIndex]);
@@ -1098,6 +1129,7 @@ app.post('/whatsapp', async (req, res) => {
             internalExtra.paymentLink = payment.payMailUrl;
           } catch (error) {
             console.error('Errore Nexi sosta:', error.message);
+            internalExtra.paymentLink = `ERRORE NEXI: ${error.message}`;
           }
         }
 
@@ -1133,6 +1165,7 @@ app.post('/whatsapp', async (req, res) => {
             internalExtra.paymentLink = payment.payMailUrl;
           } catch (error) {
             console.error('Errore Nexi noleggio:', error.message);
+            internalExtra.paymentLink = `ERRORE NEXI: ${error.message}`;
           }
         }
 

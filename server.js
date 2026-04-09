@@ -58,15 +58,15 @@ const sessions = loadSessionsFromFile();
 // =========================
 // NEXI CLASSICO (ALIAS + MAC)
 // =========================
-const NEXI_ENV = (process.env.NEXI_ENV || 'test').toLowerCase();
+const NEXI_ENV = (process.env.NEXI_ENV || 'prod').toLowerCase();
 const NEXI_API_KEY_ALIAS = process.env.NEXI_ALIAS || '';
 const NEXI_MAC_KEY = process.env.NEXI_MAC_KEY || '';
 const NEXI_TIMEOUT_HOURS = parseInt(process.env.NEXI_TIMEOUT_HOURS || '4', 10);
 
 const NEXI_BASE_URL =
-  NEXI_ENV === 'prod'
-    ? 'https://ecommerce.nexi.it'
-    : 'https://int-ecommerce.nexi.it';
+  NEXI_ENV === 'test'
+    ? 'https://int-ecommerce.nexi.it'
+    : 'https://ecommerce.nexi.it';
 
 const NEXI_PAYMAIL_ENDPOINT = `${NEXI_BASE_URL}/ecomm/api/bo/richiestaPayMail`;
 
@@ -85,9 +85,7 @@ const NOLEGGIO_PRICE_PER_DAY_EUR = parseFloat(process.env.NOLEGGIO_PRICE_PER_DAY
 const NOLEGGIO_KM_INCLUDED_PER_DAY = parseInt(process.env.NOLEGGIO_KM_INCLUDED_PER_DAY || '150', 10);
 const NOLEGGIO_EXTRA_KM_EUR = parseFloat(process.env.NOLEGGIO_EXTRA_KM_EUR || '0.15');
 
-// caparra noleggio
-const NOLEGGIO_DEPOSIT_ENABLED =
-  (process.env.NOLEGGIO_DEPOSIT_ENABLED || 'true').toLowerCase() === 'true';
+// caparra noleggio (solo informativa, non nel link)
 const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '50000', 10);
 
 // =========================
@@ -116,6 +114,10 @@ function eurosFromCents(cents) {
 
 function formatEuroNumber(value) {
   return Number(value || 0).toFixed(2).replace('.', ',');
+}
+
+function euroToCents(value) {
+  return Math.round(Number(value || 0) * 100);
 }
 
 function yesNoLabel(value) {
@@ -531,16 +533,17 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
 
     const pricePart =
       extra.baseTotalExVat !== undefined
-        ? `\n\n💰 *Noleggio:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
-          `\n💰 *Totale con IVA:* € ${formatEuroNumber(extra.baseTotalIncVat)}` +
+        ? `\n\n💰 *Costo noleggio:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
+          `\n💰 *Totale noleggio con IVA:* € ${formatEuroNumber(extra.baseTotalIncVat)}` +
           `\n🚗 *Km inclusi:* ${extra.kmIncluded} km` +
           `\n📍 *Extra km:* € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km`
         : '';
 
-    const depositPart =
-      extra.paymentLink && extra.depositCents
-        ? `\n\nPer confermare la prenotazione è richiesta una *caparra di € ${eurosFromCents(extra.depositCents)}*.\nPuò versarla qui:\n${extra.paymentLink}`
-        : `\n\nPer confermare la prenotazione è richiesta una *caparra di € ${eurosFromCents(extra.depositCents || NOLEGGIO_DEPOSIT_CENTS)}*.`;
+    const paymentPart =
+      extra.paymentLink
+        ? `\n\nPuò effettuare il pagamento del *solo costo del noleggio* qui:\n${extra.paymentLink}` +
+          `\n\nLa *caparra di € ${eurosFromCents(NOLOEGGIO_SAFE_DEPOSIT_CENTS())}* verrà gestita separatamente dal nostro staff.`
+        : `\n\nLa *caparra di € ${eurosFromCents(NOLOEGGIO_SAFE_DEPOSIT_CENTS())}* verrà gestita separatamente dal nostro staff.`;
 
     return (
       `La ringraziamo ${customerName} ✅\n\n` +
@@ -548,7 +551,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       datesPart +
       pricePart +
       '\n\nSarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.' +
-      depositPart
+      paymentPart
     );
   }
 
@@ -605,6 +608,10 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     'La sua richiesta è stata ricevuta correttamente.\n' +
     'Sarà ricontattato dal nostro staff al più presto.'
   );
+}
+
+function NOLOEGGIO_SAFE_DEPOSIT_CENTS() {
+  return NOLEGGIO_DEPOSIT_CENTS;
 }
 
 // =========================
@@ -794,13 +801,13 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
       `Mezzo richiesto: ${a[0] || '-'}\n` +
       periodLine +
       (extra.baseTotalExVat !== undefined
-        ? `Noleggio: € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%\n` +
-          `Totale con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
+        ? `Costo noleggio: € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%\n` +
+          `Totale noleggio con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
           `Km inclusi: ${extra.kmIncluded} km\n` +
           `Extra km: € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km\n`
         : '') +
-      (extra.depositCents ? `Caparra richiesta: € ${eurosFromCents(extra.depositCents)}\n` : '') +
-      (extra.paymentLink ? `Link pagamento Nexi: ${extra.paymentLink}\n` : '')
+      `Caparra da gestire a parte: € ${eurosFromCents(NOLOEGGIO_SAFE_DEPOSIT_CENTS())}\n` +
+      (extra.paymentLink ? `Link pagamento costo noleggio Nexi: ${extra.paymentLink}\n` : '')
     );
   }
 
@@ -934,18 +941,42 @@ function validateAnswer(session, answer) {
   const idx = session.questionIndex;
   const text = cleanText(answer);
 
-  if (intent === 'noleggio' && idx === 1) {
-    const range = extractDateRange(text);
-    if (!range) {
-      return {
-        valid: false,
-        message:
-          'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
-      };
+  if (intent === 'noleggio') {
+    if (idx === 0) {
+      const range = extractDateRange(text);
+      if (range) {
+        return {
+          valid: false,
+          message:
+            'Ci scusi, prima ci indichi il *mezzo richiesto*.\n\nEsempio: *Pulmino*, *Furgone 9 posti*, *Auto*.'
+        };
+      }
+    }
+
+    if (idx === 1) {
+      const range = extractDateRange(text);
+      if (!range) {
+        return {
+          valid: false,
+          message:
+            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
+        };
+      }
     }
   }
 
   if (intent === 'parcheggio_sosta') {
+    if (idx === 0) {
+      const range = extractDateRange(text);
+      if (range) {
+        return {
+          valid: false,
+          message:
+            'Ci scusi, prima ci indichi il *tipo di mezzo*.\n\nEsempio: *Auto*, *Furgone*, *Camper*.'
+        };
+      }
+    }
+
     if (idx === 1) {
       const range = extractDateRange(text);
       if (!range) {
@@ -1150,16 +1181,18 @@ app.post('/whatsapp', async (req, res) => {
             baseTotalIncVat: quote.baseTotalIncVat,
             kmIncluded: quote.kmIncluded,
             extraKmExVat: quote.extraKmExVat,
-            extraKmIncVat: quote.extraKmIncVat,
-            depositCents: NOLEGGIO_DEPOSIT_CENTS
+            extraKmIncVat: quote.extraKmIncVat
           };
         }
 
-        if (NOLEGGIO_DEPOSIT_ENABLED && canUseNexi()) {
+        // NEXI SOLO PER IL COSTO DEL NOLEGGIO CON IVA
+        if (quote && canUseNexi()) {
           try {
+            const amountCents = euroToCents(quote.baseTotalIncVat);
+
             const payment = await createNexiPayMailLink({
-              amountCents: NOLEGGIO_DEPOSIT_CENTS,
-              description: `Caparra noleggio ${session.answers[0] || ''}`,
+              amountCents,
+              description: `Pagamento noleggio ${session.answers[0] || ''} - ${quote.giorni} giorni`,
               customerWhatsapp: formatWhatsappNumber(incomingFrom)
             });
             internalExtra.paymentLink = payment.payMailUrl;

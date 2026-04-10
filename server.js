@@ -979,10 +979,10 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
   }
 
   return (
-    `La ringraziamo ${customerName} ✅\n\n` +
-    'La sua richiesta è stata ricevuta correttamente.\n' +
-    'Sarà ricontattato dal nostro staff al più presto.'
-  );
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta è stata ricevuta correttamente.\n' +
+      'Sarà ricontattato dal nostro staff al più presto.'
+    );
 }
 
 function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
@@ -1114,7 +1114,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
 function createSession(phone, profileName) {
   sessions[phone] = {
     profileName,
-    state: 'menu',
+    state: 'idle',
     intent: null,
     questionIndex: 0,
     questions: [],
@@ -1129,7 +1129,7 @@ function createSession(phone, profileName) {
 function resetSession(phone, profileName = 'Cliente') {
   sessions[phone] = {
     profileName,
-    state: 'menu',
+    state: 'idle',
     intent: null,
     questionIndex: 0,
     questions: [],
@@ -1344,17 +1344,17 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (normalize(incomingText) === 'reset') {
-      resetSession(incomingFrom, profileName);
+      session = resetSession(incomingFrom, profileName);
       twiml.message(
         'Sessione resettata ✅\n\n' +
-          buildWelcomeMenu(profileName)
+        buildWelcomeMenu(profileName)
       );
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
     if (normalize(incomingText) === 'menu') {
-      resetSession(incomingFrom, profileName);
+      session = resetSession(incomingFrom, profileName);
       twiml.message(buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
@@ -1362,17 +1362,21 @@ app.post('/whatsapp', async (req, res) => {
 
     if (!session) {
       session = createSession(incomingFrom, profileName);
+    }
 
+    if (session.state === 'idle') {
       const directIntent = intentFromMenuChoice(incomingText) || detectIntent(incomingText);
 
       if (directIntent && directIntent !== 'generico') {
         setSessionIntent(session, directIntent);
         twiml.message(
           buildStartMessageByIntent(directIntent, profileName) +
-            '\n\n' +
-            session.questions[0]
+          '\n\n' +
+          session.questions[0]
         );
       } else {
+        session.state = 'menu';
+        saveSessionsToFile();
         twiml.message(buildWelcomeMenu(profileName));
       }
 
@@ -1392,8 +1396,8 @@ app.post('/whatsapp', async (req, res) => {
       setSessionIntent(session, chosenIntent);
       twiml.message(
         buildStartMessageByIntent(chosenIntent, profileName) +
-          '\n\n' +
-          session.questions[0]
+        '\n\n' +
+        session.questions[0]
       );
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1469,7 +1473,7 @@ app.post('/whatsapp', async (req, res) => {
       const switchedIntent = detectServiceSwitch(incomingText, session.intent);
 
       if (switchedIntent === 'menu') {
-        resetSession(incomingFrom, profileName);
+        session = resetSession(incomingFrom, profileName);
         twiml.message(buildWelcomeMenu(profileName));
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -1663,7 +1667,7 @@ app.post('/whatsapp', async (req, res) => {
       return res.end(twiml.toString());
     }
 
-    resetSession(incomingFrom, profileName);
+    session = resetSession(incomingFrom, profileName);
     twiml.message(buildWelcomeMenu(profileName));
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());

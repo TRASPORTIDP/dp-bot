@@ -5,6 +5,7 @@ const twilio = require('twilio');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { XMLParser } = require('fast-xml-parser');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -14,6 +15,13 @@ const client = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  parseAttributeValue: false,
+  trimValues: true
+});
 
 const TWILIO_WHATSAPP_NUMBER = 'whatsapp:+390744817108';
 
@@ -75,10 +83,31 @@ const NEXI_PAYMAIL_ENDPOINT = `${NEXI_BASE_URL}/ecomm/api/bo/richiestaPayMail`;
 // =========================
 const CARRENTAL_UID = process.env.CARRENTAL_UID || '';
 const CARRENTAL_API_KEY = process.env.CARRENTAL_API_KEY || '';
-const CARRENTAL_URL = process.env.CARRENTAL_URL || '';
+const CARRENTAL_PING_URL =
+  process.env.CARRENTAL_PING_URL || 'https://carrentalsoftware.myappy.it/web/ota/';
+const CARRENTAL_AVAIL_URL =
+  process.env.CARRENTAL_AVAIL_URL || 'https://crsbrk00.myappy.it/web/ota/';
+const CARRENTAL_LOCATION_CODE =
+  process.env.CARRENTAL_LOCATION_CODE || '57529906';
 
 function canUseCarRental() {
-  return Boolean(CARRENTAL_UID && CARRENTAL_API_KEY && CARRENTAL_URL);
+  return Boolean(
+    CARRENTAL_UID &&
+      CARRENTAL_API_KEY &&
+      CARRENTAL_PING_URL &&
+      CARRENTAL_AVAIL_URL &&
+      CARRENTAL_LOCATION_CODE
+  );
+}
+
+function buildSoapAuthBlock() {
+  return `
+    <POS>
+      <Source>
+        <RequestorID Type="29" ID="${CARRENTAL_UID}" MessagePassword="${CARRENTAL_API_KEY}"/>
+      </Source>
+    </POS>
+  `;
 }
 
 async function pingCarRentalAPI() {
@@ -90,17 +119,13 @@ async function pingCarRentalAPI() {
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.opentravel.org/OTA/2003/05">
   <SOAP-ENV:Body>
     <ns1:OTA_PingRQ>
-      <POS>
-        <Source>
-          <RequestorID Type="29" ID="${CARRENTAL_UID}" MessagePassword="${CARRENTAL_API_KEY}"/>
-        </Source>
-      </POS>
+      ${buildSoapAuthBlock()}
       <EchoData>TEST_DP</EchoData>
     </ns1:OTA_PingRQ>
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`;
 
-  const response = await fetch(CARRENTAL_URL, {
+  const response = await fetch(CARRENTAL_PING_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml; charset=utf-8'
@@ -117,6 +142,184 @@ async function pingCarRentalAPI() {
   };
 }
 
+function toIsoDateTimeLocalStart(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}T09:00:00`;
+}
+
+function toIsoDateTimeLocalEnd(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}T18:00:00`;
+}
+
+function safeArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function findFirstByKeys(obj, keys) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  for (const key of Object.keys(obj)) {
+    if (keys.includes(key)) return obj[key];
+  }
+
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val && typeof val === 'object') {
+      const found = findFirstByKeys(val, keys);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function normalizeVehicleLabel(item) {
+  const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
+  const vehRentalCore = item?.VehRentalCore || item?.['ns1:VehRentalCore'] || {};
+  const vehicle = item?.Vehicle || item?.['ns1:Vehicle'] || {};
+  const vehMakeModel = item?.VehMakeModel || item?.['ns1:VehMakeModel'] || {};
+  const vehClass = item?.VehClass || item?.['ns1:VehClass'] || {};
+  const vehType = item?.VehType || item?.['ns1:VehType'] || {};
+
+  const code =
+    vehMakeModel?.['@_Code'] ||
+    vehicle?.['@_Code'] ||
+    vehClass?.['@_Code'] ||
+    vehType?.['@_Code'] ||
+    '';
+
+  const name =
+    vehMakeModel?.['@_Name'] ||
+    vehicle?.['@_Name'] ||
+    vehClass?.['@_Name'] ||
+    vehType?.['@_VehicleCategory'] ||
+    code ||
+    'Veicolo disponibile';
+
+  const totalCharge =
+    vehAvailCore?.TotalCharge ||
+    vehRentalCore?.TotalCharge ||
+    item?.TotalCharge ||
+    findFirstByKeys(item, ['TotalCharge', 'ns1:TotalCharge']) ||
+    {};
+
+  const estimatedTotalAmount =
+    totalCharge?.['@_EstimatedTotalAmount'] ||
+    totalCharge?.['@_RateTotalAmount'] ||
+    totalCharge?.EstimatedTotalAmount ||
+    totalCharge?.RateTotalAmount ||
+    null;
+
+  return {
+    code: code || '',
+    name: name || 'Veicolo disponibile',
+    estimatedTotalAmount: estimatedTotalAmount ? Number(estimatedTotalAmount) : null,
+    raw: item
+  };
+}
+
+function matchVehicleAgainstUserText(vehicle, userText) {
+  const q = normalize(userText);
+  const hay = normalize(`${vehicle.name} ${vehicle.code}`);
+
+  if (!q) return true;
+
+  const words = q.split(/\s+/).filter(Boolean);
+  return words.every((w) => hay.includes(w));
+}
+
+async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
+  if (!canUseCarRental()) {
+    throw new Error('Gestionale non configurato');
+  }
+
+  const pickUpDateTime = toIsoDateTimeLocalStart(startDate);
+  const returnDateTime = toIsoDateTimeLocalEnd(endDate);
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.opentravel.org/OTA/2003/05">
+  <SOAP-ENV:Body>
+    <ns1:OTA_VehAvailRateRQ>
+      ${buildSoapAuthBlock()}
+      <VehAvailRQCore PickUpDateTime="${pickUpDateTime}" ReturnDateTime="${returnDateTime}">
+        <PickUpLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+        <ReturnLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+      </VehAvailRQCore>
+    </ns1:OTA_VehAvailRateRQ>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`;
+
+  const response = await fetch(CARRENTAL_AVAIL_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8'
+    },
+    body: xml
+  });
+
+  const xmlText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Errore HTTP gestionale: ${response.status}`);
+  }
+
+  const parsed = xmlParser.parse(xmlText);
+
+  const body =
+    parsed?.['SOAP-ENV:Envelope']?.['SOAP-ENV:Body'] ||
+    parsed?.Envelope?.Body ||
+    parsed?.['soap:Envelope']?.['soap:Body'] ||
+    parsed?.['soapenv:Envelope']?.['soapenv:Body'];
+
+  if (!body) {
+    throw new Error('Risposta SOAP non valida');
+  }
+
+  const availRs =
+    body?.['ns1:OTA_VehAvailRateRS'] ||
+    body?.OTA_VehAvailRateRS ||
+    body?.['OTA_VehAvailRateRS'];
+
+  if (!availRs) {
+    const errBlock =
+      findFirstByKeys(body, ['Errors', 'ns1:Errors']) ||
+      findFirstByKeys(body, ['Error', 'ns1:Error']);
+
+    if (errBlock) {
+      throw new Error(JSON.stringify(errBlock));
+    }
+
+    throw new Error('Risposta disponibilità non riconosciuta');
+  }
+
+  const errors = availRs?.Errors || availRs?.['ns1:Errors'];
+  if (errors) {
+    throw new Error(JSON.stringify(errors));
+  }
+
+  const vehAvailsRaw =
+    findFirstByKeys(availRs, ['VehAvail', 'ns1:VehAvail']) || [];
+
+  const vehicles = safeArray(vehAvailsRaw).map(normalizeVehicleLabel);
+
+  const filtered = vehicles.filter((v) => matchVehicleAgainstUserText(v, vehicleText));
+
+  const usable = (filtered.length ? filtered : vehicles)
+    .filter((v) => v.estimatedTotalAmount !== null);
+
+  return {
+    rawXml: xmlText,
+    vehicles: usable,
+    allVehicles: vehicles
+  };
+}
+
 // =========================
 // PREZZI
 // =========================
@@ -127,7 +330,7 @@ const SOSTA_PRICE_PER_DAY_CENTS = parseInt(process.env.SOSTA_PRICE_PER_DAY_CENTS
 const SOSTA_CORRENTE_EXTRA_CENTS = parseInt(process.env.SOSTA_CORRENTE_EXTRA_CENTS || '500', 10);
 const SOSTA_ACQUA_EXTRA_CENTS = parseInt(process.env.SOSTA_ACQUA_EXTRA_CENTS || '300', 10);
 
-// noleggio
+// noleggio locale fallback
 const NOLEGGIO_PRICE_PER_DAY_EUR = parseFloat(process.env.NOLEGGIO_PRICE_PER_DAY_EUR || '70');
 const NOLEGGIO_KM_INCLUDED_PER_DAY = parseInt(process.env.NOLEGGIO_KM_INCLUDED_PER_DAY || '150', 10);
 const NOLEGGIO_EXTRA_KM_EUR = parseFloat(process.env.NOLEGGIO_EXTRA_KM_EUR || '0.15');
@@ -540,6 +743,22 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
   }
 
   if (intent === 'noleggio') {
+    if (extra.fromCarRental) {
+      const vehicleName = extra.vehicleName || extra.requestedVehicle || 'Veicolo disponibile';
+
+      return (
+        `La ringraziamo ${customerName} ✅\n\n` +
+        'Abbiamo verificato una disponibilità dal gestionale per la sua richiesta di *Noleggio*.\n\n' +
+        `🚐 *Mezzo:* ${vehicleName}\n` +
+        `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+        `💰 *Prezzo stimato dal gestionale:* € ${formatEuroNumber(extra.estimatedTotalAmount)}\n\n` +
+        'Può effettuare il pagamento del *solo costo del noleggio* qui:\n' +
+        `${extra.paymentLink || 'Link non disponibile'}\n\n` +
+        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.\n\n` +
+        'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
+      );
+    }
+
     const datesPart =
       extra.startLabel && extra.endLabel
         ? `\nPeriodo richiesto: *dal ${extra.startLabel} al ${extra.endLabel}* (${extra.days} giorni).`
@@ -648,7 +867,7 @@ function computeSostaAmountCents(answers) {
   };
 }
 
-function computeNoleggio(answers) {
+function computeNoleggioFallback(answers) {
   const dateRange = extractDateRange(answers[1]);
   if (!dateRange) return null;
 
@@ -788,6 +1007,20 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
   }
 
   if (session.intent === 'noleggio') {
+    if (extra.fromCarRental) {
+      return (
+        `🔔 NUOVA RICHIESTA NOLEGGIO DAL GESTIONALE\n\n` +
+        `👤 Nome WhatsApp: ${customerName}\n` +
+        `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+        `Richiesta mezzo: ${a[0] || '-'}\n` +
+        `Periodo: dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+        `Mezzo trovato: ${extra.vehicleName || '-'}\n` +
+        `Prezzo stimato gestionale: € ${formatEuroNumber(extra.estimatedTotalAmount)}\n` +
+        `Caparra separata: € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}\n` +
+        (extra.paymentLink ? `Link Nexi noleggio: ${extra.paymentLink}\n` : '')
+      );
+    }
+
     const dateRange = extractDateRange(a[1]);
     const periodLine = dateRange
       ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
@@ -1044,6 +1277,34 @@ app.get('/test-carrental', async (req, res) => {
   }
 });
 
+app.get('/test-carrental-avail', async (req, res) => {
+  try {
+    const vehicleText = req.query.mezzo || 'pulmino';
+    const startDate = parseItalianDate('10', '04', '2026');
+    const endDate = parseItalianDate('12', '04', '2026');
+
+    const result = await getCarRentalAvailability({
+      vehicleText,
+      startDate,
+      endDate
+    });
+
+    res.status(200).json({
+      requestedVehicle: vehicleText,
+      count: result.vehicles.length,
+      vehicles: result.vehicles.slice(0, 10).map((v) => ({
+        code: v.code,
+        name: v.name,
+        estimatedTotalAmount: v.estimatedTotalAmount
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 function escapeHtml(text) {
   return String(text || '')
     .replaceAll('&', '&amp;')
@@ -1184,38 +1445,131 @@ app.post('/whatsapp', async (req, res) => {
 
         confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
       } else if (session.intent === 'noleggio') {
-        const quote = computeNoleggio(session.answers);
+        const requestedVehicle = session.answers[0];
+        const dateRange = extractDateRange(session.answers[1]);
 
-        if (quote) {
-          internalExtra = {
-            startLabel: quote.startLabel,
-            endLabel: quote.endLabel,
-            days: quote.giorni,
-            baseTotalExVat: quote.baseTotalExVat,
-            baseTotalIncVat: quote.baseTotalIncVat,
-            kmIncluded: quote.kmIncluded,
-            extraKmExVat: quote.extraKmExVat,
-            extraKmIncVat: quote.extraKmIncVat
-          };
-        }
-
-        if (quote && canUseNexi()) {
+        if (dateRange && canUseCarRental()) {
           try {
-            const amountCents = euroToCents(quote.baseTotalIncVat);
-
-            const payment = await createNexiPayMailLink({
-              amountCents,
-              description: `Pagamento noleggio ${session.answers[0] || ''} - ${quote.giorni} giorni`,
-              customerWhatsapp: formatWhatsappNumber(incomingFrom)
+            const avail = await getCarRentalAvailability({
+              vehicleText: requestedVehicle,
+              startDate: dateRange.startDate,
+              endDate: dateRange.endDate
             });
-            internalExtra.paymentLink = payment.payMailUrl;
-          } catch (error) {
-            console.error('Errore Nexi noleggio:', error.message);
-            internalExtra.paymentLink = `ERRORE NEXI: ${error.message}`;
-          }
-        }
 
-        confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+            if (avail.vehicles.length > 0) {
+              const best = avail.vehicles[0];
+
+              internalExtra = {
+                fromCarRental: true,
+                requestedVehicle,
+                vehicleName: best.name,
+                vehicleCode: best.code,
+                startLabel: dateRange.startLabel,
+                endLabel: dateRange.endLabel,
+                days: dateRange.days,
+                estimatedTotalAmount: best.estimatedTotalAmount
+              };
+
+              if (canUseNexi() && best.estimatedTotalAmount !== null) {
+                try {
+                  const payment = await createNexiPayMailLink({
+                    amountCents: euroToCents(best.estimatedTotalAmount),
+                    description: `Pagamento noleggio ${best.name} - ${dateRange.days} giorni`,
+                    customerWhatsapp: formatWhatsappNumber(incomingFrom)
+                  });
+                  internalExtra.paymentLink = payment.payMailUrl;
+                } catch (error) {
+                  console.error('Errore Nexi noleggio gestionale:', error.message);
+                  internalExtra.paymentLink = `ERRORE NEXI: ${error.message}`;
+                }
+              }
+
+              confirmationMessage = buildCustomerConfirmation(
+                session.intent,
+                profileName,
+                internalExtra
+              );
+            } else {
+              confirmationMessage =
+                `La ringraziamo ${formatCustomerName(profileName)}.\n\n` +
+                `Al momento non risultano disponibilità dal gestionale per *${requestedVehicle}* ` +
+                `dal *${dateRange.startLabel}* al *${dateRange.endLabel}*.\n\n` +
+                `La sua richiesta è stata comunque inoltrata al nostro staff, che la ricontatterà sul numero WhatsApp da cui ci sta scrivendo.`;
+            }
+          } catch (error) {
+            console.error('Errore disponibilità gestionale:', error.message);
+
+            const fallback = computeNoleggioFallback(session.answers);
+
+            if (fallback) {
+              internalExtra = {
+                startLabel: fallback.startLabel,
+                endLabel: fallback.endLabel,
+                days: fallback.giorni,
+                baseTotalExVat: fallback.baseTotalExVat,
+                baseTotalIncVat: fallback.baseTotalIncVat,
+                kmIncluded: fallback.kmIncluded,
+                extraKmExVat: fallback.extraKmExVat,
+                extraKmIncVat: fallback.extraKmIncVat
+              };
+
+              if (canUseNexi()) {
+                try {
+                  const payment = await createNexiPayMailLink({
+                    amountCents: euroToCents(fallback.baseTotalIncVat),
+                    description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
+                    customerWhatsapp: formatWhatsappNumber(incomingFrom)
+                  });
+                  internalExtra.paymentLink = payment.payMailUrl;
+                } catch (nexiErr) {
+                  console.error('Errore Nexi noleggio fallback:', nexiErr.message);
+                  internalExtra.paymentLink = `ERRORE NEXI: ${nexiErr.message}`;
+                }
+              }
+            }
+
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              internalExtra
+            );
+          }
+        } else {
+          const fallback = computeNoleggioFallback(session.answers);
+
+          if (fallback) {
+            internalExtra = {
+              startLabel: fallback.startLabel,
+              endLabel: fallback.endLabel,
+              days: fallback.giorni,
+              baseTotalExVat: fallback.baseTotalExVat,
+              baseTotalIncVat: fallback.baseTotalIncVat,
+              kmIncluded: fallback.kmIncluded,
+              extraKmExVat: fallback.extraKmExVat,
+              extraKmIncVat: fallback.extraKmIncVat
+            };
+
+            if (canUseNexi()) {
+              try {
+                const payment = await createNexiPayMailLink({
+                  amountCents: euroToCents(fallback.baseTotalIncVat),
+                  description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
+                  customerWhatsapp: formatWhatsappNumber(incomingFrom)
+                });
+                internalExtra.paymentLink = payment.payMailUrl;
+              } catch (error) {
+                console.error('Errore Nexi noleggio fallback:', error.message);
+                internalExtra.paymentLink = `ERRORE NEXI: ${error.message}`;
+              }
+            }
+          }
+
+          confirmationMessage = buildCustomerConfirmation(
+            session.intent,
+            profileName,
+            internalExtra
+          );
+        }
       } else {
         confirmationMessage = buildCustomerConfirmation(session.intent, profileName);
       }

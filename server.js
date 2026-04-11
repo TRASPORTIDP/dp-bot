@@ -738,7 +738,7 @@ function buildWelcomeMenu(profileName) {
   const customerName = formatCustomerName(profileName);
 
   return (
-    `Salve ${customerName} 👋\n` +
+    `TEST NUOVO BOT 🚀 ${customerName}\n` +
     'Benvenuto in *Trasporti DP*.\n\n' +
     'Per poterla assistere al meglio, selezioni il servizio di suo interesse rispondendo con il numero corrispondente:\n\n' +
     '1️⃣ *Officina* 🔧\n' +
@@ -749,7 +749,6 @@ function buildWelcomeMenu(profileName) {
     '6️⃣ *Parcheggio / Sosta* 🅿️'
   );
 }
-
 function buildStartMessageByIntent(intent, profileName) {
   const customerName = formatCustomerName(profileName);
 

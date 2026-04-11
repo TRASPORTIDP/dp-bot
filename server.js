@@ -1324,7 +1324,9 @@ app.get('/test-carrental-avail', async (req, res) => {
 // =========================
 app.post('/whatsapp', async (req, res) => {
   const incomingText = cleanText(req.body.Body);
-  const incomingFrom = req.body.From || '';
+  const incomingFrom = (req.body.From || '').toLowerCase().trim();
+  console.log('NUMERO:', incomingFrom);
+console.log('MESSAGGIO:', incomingText);
   const profileName = req.body.ProfileName || 'Cliente';
   const twiml = new twilio.twiml.MessagingResponse();
 

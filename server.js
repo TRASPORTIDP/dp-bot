@@ -260,7 +260,6 @@ function prettifyVehicleCode(code) {
 
   return c || '';
 }
-
 function normalizeVehicleLabel(item) {
 
   const vehicle =

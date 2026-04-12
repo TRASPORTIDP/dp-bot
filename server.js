@@ -262,13 +262,12 @@ function prettifyVehicleCode(code) {
 }
 
 function normalizeVehicleLabel(item) {
-  // prova a prendere dati da tutti i punti possibili del gestionale
+
   const vehicle =
     item?.Vehicle ||
     item?.['ns1:Vehicle'] ||
     item?.VehAvailCore?.Vehicle ||
     {};
-
   const makeModel =
     item?.VehMakeModel ||
     item?.['ns1:VehMakeModel'] ||

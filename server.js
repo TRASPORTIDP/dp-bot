@@ -334,19 +334,7 @@ function normalizeVehicleLabel(item) {
       : null,
     raw: item
   };
-}  const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
-  const vehRentalCore = item?.VehRentalCore || item?.['ns1:VehRentalCore'] || {};
-  const vehicle = item?.Vehicle || item?.['ns1:Vehicle'] || {};
-  const vehMakeModel = item?.VehMakeModel || item?.['ns1:VehMakeModel'] || {};
-  const vehClass = item?.VehClass || item?.['ns1:VehClass'] || {};
-  const vehType = item?.VehType || item?.['ns1:VehType'] || {};
 
-  const code =
-    vehMakeModel?.['@_Code'] ||
-    vehicle?.['@_Code'] ||
-    vehClass?.['@_Code'] ||
-    vehType?.['@_Code'] ||
-    '';
 
   const rawDescription = cleanVehicleNameParts([
     vehicle?.['@_Description'],

@@ -262,7 +262,79 @@ function prettifyVehicleCode(code) {
 }
 
 function normalizeVehicleLabel(item) {
-  const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
+  // prova a prendere dati da tutti i punti possibili del gestionale
+  const vehicle =
+    item?.Vehicle ||
+    item?.['ns1:Vehicle'] ||
+    item?.VehAvailCore?.Vehicle ||
+    {};
+
+  const makeModel =
+    item?.VehMakeModel ||
+    item?.['ns1:VehMakeModel'] ||
+    vehicle?.VehMakeModel ||
+    {};
+
+  const vehClass =
+    item?.VehClass ||
+    item?.['ns1:VehClass'] ||
+    {};
+
+  const vehType =
+    item?.VehType ||
+    item?.['ns1:VehType'] ||
+    {};
+
+  // 🔑 CODICE mezzo (F1-VAN, F2-PC, P2-9P ecc)
+  const code =
+    vehicle?.['@_Code'] ||
+    makeModel?.['@_Code'] ||
+    vehClass?.['@_Code'] ||
+    vehType?.['@_Code'] ||
+    '';
+
+  // 🔑 NOME mezzo
+  let name =
+    vehicle?.['@_Description'] ||
+    vehicle?.['@_Name'] ||
+    makeModel?.['@_Name'] ||
+    vehClass?.['@_Name'] ||
+    vehType?.['@_VehicleCategory'] ||
+    '';
+
+  // 👉 fallback intelligente (importantissimo)
+  if (!name) {
+    if (code.startsWith('F1')) name = 'Furgone';
+    else if (code.startsWith('F2')) name = 'Furgone commerciale';
+    else if (code.startsWith('P2')) name = 'Pulmino 9 posti';
+    else if (code.startsWith('A1')) name = 'Auto compatta';
+    else if (code.startsWith('A2')) name = 'Auto media';
+    else if (code.startsWith('A3')) name = 'Auto premium';
+    else name = 'Veicolo disponibile';
+  }
+
+  // 💰 prezzo
+  const totalCharge =
+    item?.TotalCharge ||
+    item?.['ns1:TotalCharge'] ||
+    findFirstByKeys(item, ['TotalCharge', 'ns1:TotalCharge']) ||
+    {};
+
+  const estimatedTotalAmount =
+    totalCharge?.['@_EstimatedTotalAmount'] ||
+    totalCharge?.EstimatedTotalAmount ||
+    totalCharge?.['@_RateTotalAmount'] ||
+    null;
+
+  return {
+    code: String(code || '').trim(),
+    name: name.trim(),
+    estimatedTotalAmount: estimatedTotalAmount
+      ? Number(estimatedTotalAmount)
+      : null,
+    raw: item
+  };
+}  const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
   const vehRentalCore = item?.VehRentalCore || item?.['ns1:VehRentalCore'] || {};
   const vehicle = item?.Vehicle || item?.['ns1:Vehicle'] || {};
   const vehMakeModel = item?.VehMakeModel || item?.['ns1:VehMakeModel'] || {};

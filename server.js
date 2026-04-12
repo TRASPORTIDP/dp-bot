@@ -246,6 +246,21 @@ function cleanVehicleNameParts(parts) {
   return '';
 }
 
+function prettifyVehicleCode(code) {
+  const c = String(code || '').toUpperCase().trim();
+
+  if (c === 'F1-VAN') return 'Furgone';
+  if (c === 'F2-PC') return 'Furgone commerciale';
+  if (c === 'P2-9P') return 'Pulmino 9 posti';
+  if (c === 'P1-8P') return 'Pulmino 8 posti';
+  if (c === 'A1') return 'Auto economica';
+  if (c === 'A2') return 'Auto compatta';
+  if (c === 'A3') return 'Auto compact elite';
+  if (c === 'X-ESC') return 'Mezzo speciale';
+
+  return c || '';
+}
+
 function normalizeVehicleLabel(item) {
   const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
   const vehRentalCore = item?.VehRentalCore || item?.['ns1:VehRentalCore'] || {};
@@ -261,7 +276,7 @@ function normalizeVehicleLabel(item) {
     vehType?.['@_Code'] ||
     '';
 
-  const description = cleanVehicleNameParts([
+  const rawDescription = cleanVehicleNameParts([
     vehicle?.['@_Description'],
     vehicle?.Description,
     vehMakeModel?.['@_Name'],
@@ -271,11 +286,11 @@ function normalizeVehicleLabel(item) {
     vehClass?.['@_Name'],
     vehClass?.Name,
     vehType?.['@_VehicleCategory'],
-    vehType?.VehicleCategory,
-    code
+    vehType?.VehicleCategory
   ]);
 
-  const normalizedName = description || 'Veicolo disponibile';
+  const prettyCode = prettifyVehicleCode(code);
+  const normalizedName = rawDescription || prettyCode || 'Mezzo disponibile';
 
   const totalCharge =
     vehAvailCore?.TotalCharge ||
@@ -304,77 +319,59 @@ function getRequestedVehicleCodes(userText) {
 
   if (!q) return [];
 
-  if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti') || q.includes('minibus')) {
+  if (q.includes('pulmino') || q.includes('9 posti')) {
     return ['P2-9P', 'P1-8P'];
   }
 
-  if (q.includes('furgone') || q.includes('van') || q.includes('cargo')) {
-    return ['F1-VAN', 'F2-PC', 'VAN'];
+  if (q.includes('furgone') || q.includes('van')) {
+    return ['F1-VAN', 'F2-PC'];
   }
 
   if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
-    return ['A1', 'A2', 'A3', 'CDAR', 'ECMR', 'EDMR', 'CCAR', 'IDAR'];
+    return ['A1', 'A2', 'A3'];
   }
 
   return [];
 }
 
 function matchVehicleAgainstUserText(vehicle, userText) {
-  const q = normalize(userText);
   const requestedCodes = getRequestedVehicleCodes(userText);
   const codeUpper = String(vehicle.code || '').toUpperCase();
   const nameLower = String(vehicle.name || '').toLowerCase();
+  const q = normalize(userText);
 
-  if (!q) return true;
+  if (!requestedCodes.length) return true;
 
-  if (requestedCodes.length > 0) {
-    if (requestedCodes.some((c) => codeUpper.includes(c) || codeUpper.startsWith(c))) {
-      return true;
-    }
-
-    if (q.includes('furgone') || q.includes('van') || q.includes('cargo')) {
-      if (
-        nameLower.includes('furgone') ||
-        nameLower.includes('van') ||
-        nameLower.includes('cargo') ||
-        nameLower.includes('porter') ||
-        nameLower.includes('trasporto merci')
-      ) {
-        return true;
-      }
-    }
-
-    if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti') || q.includes('minibus')) {
-      if (
-        nameLower.includes('pulmino') ||
-        nameLower.includes('minibus') ||
-        nameLower.includes('9 posti') ||
-        nameLower.includes('8 posti') ||
-        nameLower.includes('people mover')
-      ) {
-        return true;
-      }
-    }
-
-    if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
-      if (
-        nameLower.includes('auto') ||
-        nameLower.includes('city') ||
-        nameLower.includes('compact') ||
-        nameLower.includes('compatta') ||
-        nameLower.includes('berlina') ||
-        nameLower.includes('wagon') ||
-        nameLower.includes('suv') ||
-        nameLower.includes('gruppo')
-      ) {
-        return true;
-      }
-    }
-
-    return false;
+  if (requestedCodes.some((c) => codeUpper.includes(c))) {
+    return true;
   }
 
-  return true;
+  if (q.includes('furgone')) {
+    return (
+      nameLower.includes('furgone') ||
+      nameLower.includes('commerciale') ||
+      nameLower.includes('van')
+    );
+  }
+
+  if (q.includes('pulmino') || q.includes('9 posti')) {
+    return (
+      nameLower.includes('pulmino') ||
+      nameLower.includes('9 posti') ||
+      nameLower.includes('8 posti')
+    );
+  }
+
+  if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
+    return (
+      nameLower.includes('auto') ||
+      nameLower.includes('compatta') ||
+      nameLower.includes('compact') ||
+      nameLower.includes('economica')
+    );
+  }
+
+  return false;
 }
 
 async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
@@ -453,7 +450,7 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
 
   const vehicles = safeArray(vehAvailsRaw).map(normalizeVehicleLabel);
   const filtered = vehicles.filter((v) => matchVehicleAgainstUserText(v, vehicleText));
-  const usable = (filtered.length ? filtered : vehicles).filter(
+  const usable = (filtered.length > 0 ? filtered : vehicles).filter(
     (v) => v.estimatedTotalAmount !== null
   );
 
@@ -696,6 +693,7 @@ function detectIntent(text) {
   }
 
   if (
+    msg === '2' ||
     msg.includes('noleggio') ||
     msg.includes('noleggiare') ||
     msg.includes('furgone') ||
@@ -708,6 +706,7 @@ function detectIntent(text) {
   }
 
   if (
+    msg === '3' ||
     msg.includes('vendita') ||
     msg.includes('auto usata') ||
     msg.includes('comprare auto') ||
@@ -719,6 +718,7 @@ function detectIntent(text) {
   }
 
   if (
+    msg === '4' ||
     msg.includes('trasporto') ||
     msg.includes('bisarca') ||
     msg.includes('ritiro veicolo') ||
@@ -730,6 +730,7 @@ function detectIntent(text) {
   }
 
   if (
+    msg === '6' ||
     msg.includes('parcheggio') ||
     msg.includes('sosta') ||
     msg.includes('posto camper') ||
@@ -747,12 +748,12 @@ function detectIntent(text) {
 function intentFromMenuChoice(text) {
   const msg = normalize(text);
 
-  if (msg === '1') return 'officina';
-  if (msg === '2') return 'noleggio';
-  if (msg === '3') return 'vendita';
-  if (msg === '4') return 'trasporto';
-  if (msg === '5') return 'contatto_diretto';
-  if (msg === '6') return 'parcheggio_sosta';
+  if (msg === '1' || msg === 'officina') return 'officina';
+  if (msg === '2' || msg === 'noleggio') return 'noleggio';
+  if (msg === '3' || msg === 'vendita') return 'vendita';
+  if (msg === '4' || msg === 'trasporto') return 'trasporto';
+  if (msg === '5' || msg === 'responsabile' || msg === 'contatto diretto') return 'contatto_diretto';
+  if (msg === '6' || msg === 'parcheggio' || msg === 'sosta') return 'parcheggio_sosta';
 
   return null;
 }
@@ -945,7 +946,8 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
         `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
-        'Ho comunque inoltrato la richiesta al nostro staff, che ti ricontatterà al più presto su questo numero.'
+        'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo nello stesso formato.\n' +
+        'Esempio: *18/04 - 21/04*'
       );
     }
 
@@ -1428,10 +1430,13 @@ app.post('/whatsapp', async (req, res) => {
       session = createSession(incomingFrom, profileName);
     }
 
+    // se il cliente scrive una parola-servizio da idle o menu
     if (session.state === 'idle') {
-      const directIntent = intentFromMenuChoice(incomingText);
+      const directIntent =
+        intentFromMenuChoice(incomingText) ||
+        detectIntent(incomingText);
 
-      if (directIntent) {
+      if (directIntent && directIntent !== 'generico') {
         setSessionIntent(session, directIntent);
         twiml.message(
           buildStartMessageByIntent(directIntent, profileName) +
@@ -1448,9 +1453,11 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (session.state === 'menu') {
-      const chosenIntent = intentFromMenuChoice(incomingText);
+      const chosenIntent =
+        intentFromMenuChoice(incomingText) ||
+        detectIntent(incomingText);
 
-      if (!chosenIntent) {
+      if (!chosenIntent || chosenIntent === 'generico') {
         twiml.message(buildInvalidChoiceMessage());
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -1636,6 +1643,12 @@ app.post('/whatsapp', async (req, res) => {
               profileName,
               internalExtra
             );
+
+            twiml.message(confirmationMessage);
+            clearSession(incomingFrom);
+
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            return res.end(twiml.toString());
           } catch (error) {
             console.error('Errore disponibilità gestionale:', error.message);
 

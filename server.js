@@ -238,16 +238,39 @@ function findFirstByKeys(obj, keys) {
 function prettifyVehicleCode(code) {
   const c = String(code || '').toUpperCase().trim();
 
-  if (c === 'F1-VAN') return 'Furgone';
-  if (c === 'F2-PC') return 'Furgone commerciale';
-  if (c === 'P2-9P') return 'Pulmino 9 posti';
-  if (c === 'P1-8P') return 'Pulmino 8 posti';
-  if (c === 'A1') return 'Auto economica';
-  if (c === 'A2') return 'Auto compatta';
-  if (c === 'A3') return 'Auto compact elite';
-  if (c === 'X-ESC') return 'Mezzo speciale';
+  if (c === 'F1-VAN') return 'Gruppo F1 - Furgone';
+  if (c === 'F2-PC') return 'Gruppo F2 - Furgone commerciale';
+  if (c === 'P2-9P') return 'Gruppo P2 - 9 Posti';
+  if (c === 'P1-8P') return 'Gruppo P1 - 8 Posti';
+  if (c === 'A1' || c === 'A1-COMPACT ECO') return 'Gruppo A1 - Compact Eco';
+  if (c === 'A2' || c === 'A2-COMPACT') return 'Gruppo A2 - Compact';
+  if (c === 'A3' || c === 'A3-COMPACT ELITE') return 'Gruppo A3 - Compact Elite';
+  if (c === 'X-ESC') return 'Gruppo X - Mezzo speciale';
 
   return c || '';
+}
+
+function humanizeVehicleName(name, code) {
+  const cleaned = String(name || '').replace(/\s+/g, ' ').trim();
+  const upperCode = String(code || '').toUpperCase().trim();
+
+  if (!cleaned) return prettifyVehicleCode(upperCode) || 'Veicolo disponibile';
+
+  const lower = cleaned.toLowerCase();
+
+  if (lower.includes('gruppo')) {
+    return cleaned;
+  }
+
+  if (upperCode === 'P2-9P') return `Gruppo P2 - 9 Posti`;
+  if (upperCode === 'P1-8P') return `Gruppo P1 - 8 Posti`;
+  if (upperCode === 'F1-VAN') return `Gruppo F1 - Furgone`;
+  if (upperCode === 'F2-PC') return `Gruppo F2 - Furgone commerciale`;
+  if (upperCode.startsWith('A1')) return `Gruppo A1 - Compact Eco`;
+  if (upperCode.startsWith('A2')) return `Gruppo A2 - Compact`;
+  if (upperCode.startsWith('A3')) return `Gruppo A3 - Compact Elite`;
+
+  return cleaned;
 }
 
 function normalizeVehicleLabel(item) {
@@ -289,6 +312,8 @@ function normalizeVehicleLabel(item) {
   if (!name) {
     name = prettifyVehicleCode(code) || 'Veicolo disponibile';
   }
+
+  name = humanizeVehicleName(name, code);
 
   const totalCharge =
     item?.TotalCharge ||
@@ -347,15 +372,21 @@ function matchVehicleAgainstUserText(vehicle, userText) {
   }
 
   if (q.includes('pulmino') || q.includes('9 posti')) {
-    return nameLower.includes('pulmino') || nameLower.includes('posti');
+    return (
+      nameLower.includes('pulmino') ||
+      nameLower.includes('posti') ||
+      nameLower.includes('9 posti') ||
+      nameLower.includes('8 posti')
+    );
   }
 
   if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
     return (
       nameLower.includes('auto') ||
-      nameLower.includes('compatta') ||
       nameLower.includes('compact') ||
-      nameLower.includes('economica')
+      nameLower.includes('compatta') ||
+      nameLower.includes('eco') ||
+      nameLower.includes('elite')
     );
   }
 
@@ -641,6 +672,45 @@ function computeNoleggioFallback(answers) {
 }
 
 // =========================
+// COMANDI GLOBALI
+// =========================
+function isMenuCommand(text) {
+  const msg = normalize(text);
+  return msg === 'menu' || msg === 'menù' || msg === 'inizio';
+}
+
+function isResetCommand(text) {
+  const msg = normalize(text);
+  return msg === 'reset' || msg === 'riavvia' || msg === 'ricomincia';
+}
+
+function isBackCommand(text) {
+  const msg = normalize(text);
+  return [
+    'indietro',
+    'torna',
+    'torna indietro',
+    'voglio tornare',
+    'ho sbagliato',
+    'scusa ho sbagliato',
+    'a scusa ho sbagliato',
+    'annulla'
+  ].includes(msg);
+}
+
+function isAnotherDateCommand(text) {
+  const msg = normalize(text);
+  return [
+    'altra data',
+    'altre date',
+    'cambio data',
+    'cambiare data',
+    'se ti do altra data',
+    'provo altra data'
+  ].includes(msg);
+}
+
+// =========================
 // INTENT
 // =========================
 function detectIntent(text) {
@@ -749,13 +819,13 @@ function intentFromMenuChoice(text) {
 function detectServiceSwitch(text, currentIntent) {
   const msg = normalize(text);
 
-  if (msg === 'menu' || msg === 'reset') return 'menu';
+  if (isMenuCommand(msg) || isResetCommand(msg)) return 'menu';
 
   const menuChoice = intentFromMenuChoice(msg);
   if (menuChoice && menuChoice !== currentIntent) return menuChoice;
 
   if (
-    msg.includes('ho sbagliato') ||
+    msg.includes('ho sbagliato servizio') ||
     msg.includes('servizio sbagliato') ||
     msg.includes('cambiare servizio') ||
     msg.includes('mi serve il noleggio') ||
@@ -797,7 +867,8 @@ function buildWelcomeMenu(profileName) {
     '3️⃣ *Vendita auto* 🚗\n' +
     '4️⃣ *Trasporto veicoli* 🚛\n' +
     '5️⃣ *Contatto diretto / Responsabile* 📞\n' +
-    '6️⃣ *Parcheggio / Sosta* 🅿️'
+    '6️⃣ *Parcheggio / Sosta* 🅿️\n\n' +
+    'Puoi rispondere sia con il *numero* sia con la *parola*.'
   );
 }
 
@@ -805,11 +876,11 @@ function buildStartMessageByIntent(intent, profileName) {
   const customerName = formatCustomerName(profileName);
 
   if (intent === 'officina') {
-    return `Perfetto ${customerName} 👌\n\nTi passo sul reparto *Officina*.\nPer aiutarti al meglio ti chiedo qualche informazione rapida.`;
+    return `Perfetto ${customerName} 👌\n\nTi passo sul reparto *Officina*.\nTi chiedo qualche informazione rapida e poi ci pensiamo noi.`;
   }
 
   if (intent === 'noleggio') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Noleggio*.\nMi servono solo due informazioni per controllare disponibilità e prezzo.`;
+    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Noleggio*.\nDimmi solo il mezzo e le date, così controllo subito disponibilità e prezzo.`;
   }
 
   if (intent === 'vendita') {
@@ -884,7 +955,7 @@ function buildQuestions(intent) {
 function buildInvalidChoiceMessage() {
   return (
     'Non ho capito la scelta 😊\n\n' +
-    'Rispondi con:\n' +
+    'Puoi rispondermi con:\n' +
     '1️⃣ Officina\n' +
     '2️⃣ Noleggio\n' +
     '3️⃣ Vendita auto\n' +
@@ -896,7 +967,7 @@ function buildInvalidChoiceMessage() {
 
 function buildServiceChangedMessage(intent, profileName) {
   return (
-    'Va bene, cambiamo subito servizio 👍\n\n' +
+    'Nessun problema, cambiamo subito servizio 👍\n\n' +
     buildStartMessageByIntent(intent, profileName) +
     '\n\n' +
     buildQuestions(intent)[0]
@@ -907,9 +978,7 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, veh
   const customerName = formatCustomerName(profileName);
 
   const lines = vehicles.slice(0, 3).map((v, i) => {
-    const label = v.code
-      ? `${v.name} (${v.code})`
-      : v.name;
+    const label = v.code ? `${v.name} (${v.code})` : v.name;
     return `${i + 1}️⃣ *${label}*\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
   });
 
@@ -917,7 +986,8 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, veh
     `Perfetto ${customerName} 👌\n\n` +
     `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n\n` +
     `${lines.join('\n\n')}\n\n` +
-    'Scrivimi *1*, *2* oppure *3* per scegliere il mezzo che preferisci.'
+    'Scrivimi *1*, *2* oppure *3* per scegliere il mezzo che preferisci.\n' +
+    'Se hai sbagliato, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
   );
 }
 
@@ -938,7 +1008,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
         `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
-        'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo nello stesso formato.\n' +
+        'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
         'Esempio: *18/04 - 21/04*'
       );
     }
@@ -1172,7 +1242,9 @@ function createSession(phone, profileName) {
     questions: [],
     answers: [],
     createdAt: Date.now(),
-    pendingOptions: null
+    pendingOptions: null,
+    lastDateRange: null,
+    lastRequestedVehicle: null
   };
   return sessions[phone];
 }
@@ -1186,7 +1258,9 @@ function resetSession(phone, profileName = 'Cliente') {
     questions: [],
     answers: [],
     createdAt: Date.now(),
-    pendingOptions: null
+    pendingOptions: null,
+    lastDateRange: null,
+    lastRequestedVehicle: null
   };
   return sessions[phone];
 }
@@ -1219,12 +1293,22 @@ function validateAnswer(session, answer) {
   const text = cleanText(answer);
 
   if (session.state === 'vehicle_choice') {
-    if (!['1', '2', '3'].includes(normalize(text))) {
-      return {
-        valid: false,
-        message: 'Scrivimi semplicemente *1*, *2* oppure *3*.'
-      };
+    if (
+      ['1', '2', '3'].includes(normalize(text)) ||
+      isMenuCommand(text) ||
+      isResetCommand(text) ||
+      isBackCommand(text) ||
+      isAnotherDateCommand(text)
+    ) {
+      return { valid: true };
     }
+
+    return {
+      valid: false,
+      message:
+        'Se vuoi scegliere un mezzo scrivimi *1*, *2* oppure *3*.\n' +
+        'Se invece vuoi cambiare, puoi scrivere *indietro*, *menu* oppure *altra data*.'
+    };
   }
 
   if (intent === 'noleggio' && session.state === 'questions') {
@@ -1404,15 +1488,17 @@ app.post('/whatsapp', async (req, res) => {
       session = null;
     }
 
-    if (normalize(incomingText) === 'reset') {
+    if (isResetCommand(incomingText)) {
       resetSession(incomingFrom, profileName);
       twiml.message('Conversazione resettata ✅\n\n' + buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
 
-    if (normalize(incomingText) === 'menu') {
+    if (isMenuCommand(incomingText)) {
       resetSession(incomingFrom, profileName);
+      const s = sessions[incomingFrom];
+      s.state = 'menu';
       twiml.message(buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
@@ -1420,6 +1506,71 @@ app.post('/whatsapp', async (req, res) => {
 
     if (!session) {
       session = createSession(incomingFrom, profileName);
+    }
+
+    // gestione più umana da vehicle_choice
+    if (session.state === 'vehicle_choice') {
+      if (isBackCommand(incomingText)) {
+        session.state = 'questions';
+        session.questionIndex = 1;
+        session.pendingOptions = null;
+        session.createdAt = Date.now();
+
+        twiml.message(
+          'Nessun problema 👍\n\n' +
+          'Torniamo indietro alle date del noleggio.\n\n' +
+          session.questions[1]
+        );
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      if (isAnotherDateCommand(incomingText)) {
+        session.state = 'questions';
+        session.questionIndex = 1;
+        session.pendingOptions = null;
+        session.createdAt = Date.now();
+
+        twiml.message(
+          'Va bene 👍\n\n' +
+          'Mandami pure le nuove date del noleggio.\n\n' +
+          session.questions[1]
+        );
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+    }
+
+    // se l'utente dice "ho sbagliato" mentre compila un servizio
+    if (session.state === 'questions' && isBackCommand(incomingText)) {
+      if (session.questionIndex > 0) {
+        session.questionIndex -= 1;
+        session.answers = session.answers.slice(0, session.questionIndex);
+        session.createdAt = Date.now();
+
+        twiml.message(
+          'Nessun problema 👍\n\n' +
+          'Torniamo alla domanda precedente:\n\n' +
+          session.questions[session.questionIndex]
+        );
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      session.state = 'menu';
+      session.intent = null;
+      session.questions = [];
+      session.answers = [];
+      session.questionIndex = 0;
+      session.pendingOptions = null;
+      session.createdAt = Date.now();
+
+      twiml.message(
+        'Va bene, torniamo al menu principale 👌\n\n' +
+        buildWelcomeMenu(profileName)
+      );
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
     }
 
     if (session.state === 'idle') {
@@ -1478,7 +1629,11 @@ app.post('/whatsapp', async (req, res) => {
       const selected = options[idx];
 
       if (!selected) {
-        twiml.message('Scelta non valida. Scrivimi *1*, *2* oppure *3*.');
+        twiml.message(
+          'Scelta non valida 😊\n\n' +
+          'Scrivimi *1*, *2* oppure *3*.\n' +
+          'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+        );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
@@ -1537,6 +1692,7 @@ app.post('/whatsapp', async (req, res) => {
 
       if (switchedIntent === 'menu') {
         resetSession(incomingFrom, profileName);
+        sessions[incomingFrom].state = 'menu';
         twiml.message(buildWelcomeMenu(profileName));
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -1547,6 +1703,15 @@ app.post('/whatsapp', async (req, res) => {
         twiml.message(buildServiceChangedMessage(switchedIntent, profileName));
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
+      }
+
+      // se dopo unavailable scrive direttamente una nuova data
+      if (
+        session.intent === 'noleggio' &&
+        session.questionIndex === 1 &&
+        extractDateRange(incomingText)
+      ) {
+        // normale gestione sotto
       }
 
       const validation = validateAnswer(session, incomingText);
@@ -1596,6 +1761,9 @@ app.post('/whatsapp', async (req, res) => {
       } else if (session.intent === 'noleggio') {
         const requestedVehicle = session.answers[0];
         const dateRange = extractDateRange(session.answers[1]);
+
+        session.lastRequestedVehicle = requestedVehicle;
+        session.lastDateRange = dateRange;
 
         if (dateRange && canUseCarRental()) {
           try {
@@ -1650,9 +1818,13 @@ app.post('/whatsapp', async (req, res) => {
               internalExtra
             );
 
-            twiml.message(confirmationMessage);
-            clearSession(incomingFrom);
+            // invece di chiudere la sessione, resto sulle date
+            session.state = 'questions';
+            session.questionIndex = 1;
+            session.answers = [requestedVehicle];
+            session.createdAt = Date.now();
 
+            twiml.message(confirmationMessage);
             res.writeHead(200, { 'Content-Type': 'text/xml' });
             return res.end(twiml.toString());
           } catch (error) {
@@ -1747,6 +1919,7 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     resetSession(incomingFrom, profileName);
+    sessions[incomingFrom].state = 'menu';
     twiml.message(buildWelcomeMenu(profileName));
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());

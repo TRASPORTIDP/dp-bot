@@ -663,6 +663,44 @@ function computeNoleggioFallback(answers) {
   };
 }
 
+function extractKilometers(text) {
+  const raw = normalize(text).replace(/\./g, '').replace(/,/g, '.');
+  const match = raw.match(/(\d{1,6})/);
+  if (!match) return null;
+
+  const km = parseInt(match[1], 10);
+  if (!km || km < 0) return null;
+  return km;
+}
+
+function computeNoleggioFallbackWithKm(answers) {
+  const dateRange = extractDateRange(answers[1]);
+  if (!dateRange) return null;
+
+  const requestedKm = extractKilometers(answers[2]) || 0;
+  const giorni = dateRange.days;
+  const kmIncluded = NOLEGGIO_KM_INCLUDED_PER_DAY * giorni;
+  const extraKm = Math.max(0, requestedKm - kmIncluded);
+
+  const baseTotalExVat = NOLEGGIO_PRICE_PER_DAY_EUR * giorni;
+  const extraKmTotalExVat = extraKm * NOLEGGIO_EXTRA_KM_EUR;
+  const totalExVat = baseTotalExVat + extraKmTotalExVat;
+  const totalIncVat = totalExVat * (1 + IVA_RATE);
+
+  return {
+    giorni,
+    startLabel: dateRange.startLabel,
+    endLabel: dateRange.endLabel,
+    requestedKm,
+    kmIncluded,
+    extraKm,
+    extraKmExVat: NOLEGGIO_EXTRA_KM_EUR,
+    extraKmTotalExVat,
+    baseTotalExVat,
+    totalExVat,
+    totalIncVat
+  };
+}
 // =========================
 // COMANDI GLOBALI
 // =========================
@@ -907,7 +945,8 @@ function buildQuestions(intent) {
   if (intent === 'noleggio') {
     return [
       'Che *mezzo* ti serve? (es. *pulmino*, *furgone*, *auto*)',
-      'Puoi indicarmi le *date del noleggio* in questo formato?\n\nEsempio: *10/05 - 15/05*'
+      'Puoi indicarmi le *date del noleggio* in questo formato?\n\nEsempio: *10/05 - 15/05*',
+      'Quanti *km* prevedi di fare in totale?\n\nEsempio: *300*'
     ];
   }
 
@@ -943,7 +982,6 @@ function buildQuestions(intent) {
 
   return [];
 }
-
 function buildInvalidChoiceMessage() {
   return (
     'Non ho capito la scelta 😊\n\n' +
@@ -966,7 +1004,7 @@ function buildServiceChangedMessage(intent, profileName) {
   );
 }
 
-function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, vehicles) {
+function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, requestedKm, vehicles) {
   const customerName = formatCustomerName(profileName);
 
   const lines = vehicles.slice(0, 3).map((v, i) => {
@@ -976,13 +1014,13 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, veh
 
   return (
     `Perfetto ${customerName} 👌\n\n` +
-    `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n\n` +
+    `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n` +
+    `🚗 *Km richiesti:* ${requestedKm} km\n\n` +
     `${lines.join('\n\n')}\n\n` +
     'Scrivimi *1*, *2* oppure *3* per scegliere il mezzo che preferisci.\n' +
     'Se hai sbagliato, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
   );
 }
-
 function buildCustomerConfirmation(intent, profileName, extra = {}) {
   const customerName = formatCustomerName(profileName);
 
@@ -995,56 +1033,74 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     );
   }
 
-  if (intent === 'noleggio') {
-    if (extra.unavailable) {
-      return (
-        `Grazie ${customerName} 🙏\n\n` +
-        `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
-        'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
-        'Esempio: *18/04 - 21/04*'
-      );
-    }
-
-    if (extra.fromCarRental) {
-      return (
-        `Grazie ${customerName} ✅\n\n` +
-        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
-        `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
-        `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
-        `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}\n\n` +
-        `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
-        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
-      );
-    }
-
-    const datesPart =
-      extra.startLabel && extra.endLabel
-        ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
-        : '';
-
-    const pricePart =
-      extra.baseTotalExVat !== undefined
-        ? `\n\n💰 *Costo noleggio:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
-          `\n💰 *Totale con IVA:* € ${formatEuroNumber(extra.baseTotalIncVat)}` +
-          `\n🚗 *Km inclusi:* ${extra.kmIncluded} km` +
-          `\n📍 *Extra km:* € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km`
-        : '';
-
-    const paymentPart =
-      extra.paymentLink
-        ? `\n\nPuoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink}` +
-          `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
-        : `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`;
-
+ if (intent === 'noleggio') {
+  if (extra.unavailableBecauseStationClosed) {
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.' +
-      datesPart +
-      pricePart +
-      paymentPart
+      `Grazie ${customerName} 🙏\n\n` +
+      `Per il periodo *${extra.startLabel} - ${extra.endLabel}* il ritiro automatico non risulta disponibile dalla stazione selezionata.\n\n` +
+      'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
+      'Esempio: *18/04 - 21/04*'
     );
   }
 
+  if (extra.unavailable) {
+    return (
+      `Grazie ${customerName} 🙏\n\n` +
+      `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
+      'Se vuoi, puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
+      'Esempio: *18/04 - 21/04*'
+    );
+  }
+
+  if (extra.fromCarRental) {
+    return (
+      `Grazie ${customerName} ✅\n\n` +
+      'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
+      `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
+      `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+      `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
+      `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}\n\n` +
+      `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
+      `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
+    );
+  }
+
+  const datesPart =
+    extra.startLabel && extra.endLabel
+      ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
+      : '';
+
+  const kmPart =
+    extra.requestedKm !== undefined
+      ? `\n🚗 *Km richiesti:* ${extra.requestedKm} km` +
+        `\n🚙 *Km inclusi:* ${extra.kmIncluded} km` +
+        `\n📍 *Extra km:* ${extra.extraKm} km`
+      : '';
+
+  const pricePart =
+    extra.totalExVat !== undefined
+      ? `\n\n💰 *Costo noleggio base:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
+        `\n💰 *Costo extra km:* € ${formatEuroNumber(extra.extraKmTotalExVat || 0)} + IVA 22%` +
+        `\n💰 *Totale imponibile:* € ${formatEuroNumber(extra.totalExVat)}` +
+        `\n💰 *Totale con IVA:* € ${formatEuroNumber(extra.totalIncVat)}` +
+        `\n📍 *Tariffa extra km:* € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km`
+      : '';
+
+  const paymentPart =
+    extra.paymentLink
+      ? `\n\nPuoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink}` +
+        `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
+      : `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`;
+
+  return (
+    `Grazie ${customerName} ✅\n\n` +
+    'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.' +
+    datesPart +
+    kmPart +
+    pricePart +
+    paymentPart
+  );
+}
   if (intent === 'vendita') {
     return (
       `Grazie ${customerName} ✅\n\n` +
@@ -1183,7 +1239,8 @@ async function notifyPrices(profileName, incomingFrom, data) {
     `👤 ${profileName}\n` +
     `📞 ${incomingFrom}\n\n` +
     `🚐 Mezzo richiesto: ${data.requestedVehicle}\n` +
-    `📅 Periodo: ${data.startLabel} - ${data.endLabel}\n\n`;
+    `📅 Periodo: ${data.startLabel} - ${data.endLabel}\n` +
+    `🚗 Km richiesti: ${data.requestedKm} km\n\n`;
 
   data.vehicles.forEach((v, i) => {
     text += `${i + 1}) ${v.name}${v.code ? ` (${v.code})` : ''} - € ${formatEuroNumber(v.estimatedTotalAmount)}\n`;
@@ -1191,7 +1248,6 @@ async function notifyPrices(profileName, incomingFrom, data) {
 
   await sendInternalNotification(GENERAL_NUMBERS, text);
 }
-
 async function notifyPaymentSuccess(data) {
   const text =
     `✅ PAGAMENTO RICEVUTO\n\n` +
@@ -1286,18 +1342,40 @@ function validateAnswer(session, answer) {
     };
   }
 
-  if (intent === 'noleggio' && session.state === 'questions') {
-    if (idx === 0) {
-      const range = extractDateRange(text);
-      if (range) {
-        return {
-          valid: false,
-          message:
-            'Prima indicami il *mezzo richiesto* 😊\n\nEsempio: *pulmino*, *furgone*, *auto*.'
-        };
-      }
+if (intent === 'noleggio' && session.state === 'questions') {
+  if (idx === 0) {
+    const range = extractDateRange(text);
+    if (range) {
+      return {
+        valid: false,
+        message:
+          'Prima indicami il *mezzo richiesto* 😊\n\nEsempio: *pulmino*, *furgone*, *auto*.'
+      };
     }
+  }
 
+  if (idx === 1) {
+    const range = extractDateRange(text);
+    if (!range) {
+      return {
+        valid: false,
+        message:
+          'Non riesco a leggere bene le date.\n\nScrivile così:\n*10/05 - 15/05*'
+      };
+    }
+  }
+
+  if (idx === 2) {
+    const km = extractKilometers(text);
+    if (km === null) {
+      return {
+        valid: false,
+        message:
+          'Indicami solo i *km previsti* in numero.\n\nEsempio: *300*'
+      };
+    }
+  }
+}
     if (idx === 1) {
       const range = extractDateRange(text);
       if (!range) {
@@ -1642,18 +1720,18 @@ app.post('/whatsapp', async (req, res) => {
       }
 
       let internalExtra = {
-        fromCarRental: true,
-        requestedVehicle: session.pendingOptions.requestedVehicle,
-        vehicleName: selected.code
-          ? `${selected.name} (${selected.code})`
-          : selected.name,
-        vehicleCode: selected.code,
-        startLabel: session.pendingOptions.startLabel,
-        endLabel: session.pendingOptions.endLabel,
-        days: session.pendingOptions.days,
-        estimatedTotalAmount: selected.estimatedTotalAmount
-      };
-
+  fromCarRental: true,
+  requestedVehicle: session.pendingOptions.requestedVehicle,
+  vehicleName: selected.code
+    ? `${selected.name} (${selected.code})`
+    : selected.name,
+  vehicleCode: selected.code,
+  startLabel: session.pendingOptions.startLabel,
+  endLabel: session.pendingOptions.endLabel,
+  days: session.pendingOptions.days,
+  requestedKm: session.pendingOptions.requestedKm || 0,
+  estimatedTotalAmount: selected.estimatedTotalAmount
+};
       if (canUseNexi() && selected.estimatedTotalAmount !== null) {
         try {
           const payment = await createNexiPayMailLink({
@@ -1666,7 +1744,7 @@ app.post('/whatsapp', async (req, res) => {
 
           transactions[payment.codiceTransazione] = {
             codiceTransazione: payment.codiceTransazione,
-            customerName: profileName,
+            requestedKm: session.pendingOptions.requestedKm || 0,            customerName: profileName,
             customerWhatsapp: incomingFrom,
             vehicleName: selected.code
               ? `${selected.name} (${selected.code})`
@@ -1772,72 +1850,196 @@ app.post('/whatsapp', async (req, res) => {
         );
         await sendInternalNotification(getRecipients(session.intent), internalMessage);
       } else if (session.intent === 'noleggio') {
-        const requestedVehicle = session.answers[0];
-        const dateRange = extractDateRange(session.answers[1]);
+  const requestedVehicle = session.answers[0];
+  const dateRange = extractDateRange(session.answers[1]);
+  const requestedKm = extractKilometers(session.answers[2]) || 0;
 
-        session.lastRequestedVehicle = requestedVehicle;
-        session.lastDateRange = dateRange;
+  session.lastRequestedVehicle = requestedVehicle;
+  session.lastDateRange = dateRange;
 
-        if (dateRange && canUseCarRental()) {
+  if (dateRange && canUseCarRental()) {
+    try {
+      const avail = await getCarRentalAvailability({
+        vehicleText: requestedVehicle,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
+
+      console.log(
+        'VEICOLI TROVATI:',
+        JSON.stringify(
+          avail.vehicles.map((v) => ({
+            code: v.code,
+            name: v.name,
+            estimatedTotalAmount: v.estimatedTotalAmount
+          })),
+          null,
+          2
+        )
+      );
+
+      if (avail.vehicles.length > 0) {
+        const topVehicles = avail.vehicles.slice(0, 3);
+
+        await notifyPrices(profileName, incomingFrom, {
+          requestedVehicle,
+          startLabel: dateRange.startLabel,
+          endLabel: dateRange.endLabel,
+          requestedKm,
+          vehicles: topVehicles
+        });
+
+        session.state = 'vehicle_choice';
+        session.pendingOptions = {
+          requestedVehicle,
+          startLabel: dateRange.startLabel,
+          endLabel: dateRange.endLabel,
+          days: dateRange.days,
+          requestedKm,
+          vehicles: topVehicles
+        };
+
+        twiml.message(
+          buildVehicleChoiceMessage(
+            profileName,
+            requestedVehicle,
+            dateRange,
+            requestedKm,
+            topVehicles
+          )
+        );
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      internalExtra = {
+        unavailable: true,
+        requestedVehicle,
+        startLabel: dateRange.startLabel,
+        endLabel: dateRange.endLabel
+      };
+
+      confirmationMessage = buildCustomerConfirmation(
+        session.intent,
+        profileName,
+        internalExtra
+      );
+
+      session.state = 'questions';
+      session.questionIndex = 1;
+      session.answers = [requestedVehicle];
+      session.createdAt = Date.now();
+
+      twiml.message(confirmationMessage);
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
+    } catch (error) {
+      console.error('Errore disponibilità gestionale:', error.message);
+
+      const errMsg = String(error.message || '').toLowerCase();
+
+      if (
+        errMsg.includes('stazione scelta non risulta aperta') ||
+        errMsg.includes('ritiro della macchina')
+      ) {
+        internalExtra = {
+          unavailableBecauseStationClosed: true,
+          requestedVehicle,
+          startLabel: dateRange.startLabel,
+          endLabel: dateRange.endLabel
+        };
+
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName,
+          internalExtra
+        );
+
+        session.state = 'questions';
+        session.questionIndex = 1;
+        session.answers = [requestedVehicle];
+        session.createdAt = Date.now();
+
+        twiml.message(confirmationMessage);
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      const fallback = computeNoleggioFallbackWithKm(session.answers);
+
+      if (fallback) {
+        internalExtra = {
+          startLabel: fallback.startLabel,
+          endLabel: fallback.endLabel,
+          days: fallback.giorni,
+          requestedKm: fallback.requestedKm,
+          kmIncluded: fallback.kmIncluded,
+          extraKm: fallback.extraKm,
+          extraKmExVat: fallback.extraKmExVat,
+          extraKmTotalExVat: fallback.extraKmTotalExVat,
+          baseTotalExVat: fallback.baseTotalExVat,
+          totalExVat: fallback.totalExVat,
+          totalIncVat: fallback.totalIncVat
+        };
+
+        if (canUseNexi()) {
           try {
-            const avail = await getCarRentalAvailability({
-              vehicleText: requestedVehicle,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate
+            const payment = await createNexiPayMailLink({
+              amountCents: euroToCents(fallback.totalIncVat),
+              description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
+              customerWhatsapp: formatWhatsappNumber(incomingFrom)
             });
+            internalExtra.paymentLink = payment.payMailUrl;
+          } catch (nexiErr) {
+            console.error('Errore Nexi noleggio fallback:', nexiErr.message);
+          }
+        }
+      }
 
-            console.log(
-              'VEICOLI TROVATI:',
-              JSON.stringify(
-                avail.vehicles.map((v) => ({
-                  code: v.code,
-                  name: v.name,
-                  estimatedTotalAmount: v.estimatedTotalAmount
-                })),
-                null,
-                2
-              )
-            );
+      confirmationMessage = buildCustomerConfirmation(
+        session.intent,
+        profileName,
+        internalExtra
+      );
+    }
+  } else {
+    const fallback = computeNoleggioFallbackWithKm(session.answers);
 
-            if (avail.vehicles.length > 0) {
-              const topVehicles = avail.vehicles.slice(0, 3);
+    if (fallback) {
+      internalExtra = {
+        startLabel: fallback.startLabel,
+        endLabel: fallback.endLabel,
+        days: fallback.giorni,
+        requestedKm: fallback.requestedKm,
+        kmIncluded: fallback.kmIncluded,
+        extraKm: fallback.extraKm,
+        extraKmExVat: fallback.extraKmExVat,
+        extraKmTotalExVat: fallback.extraKmTotalExVat,
+        baseTotalExVat: fallback.baseTotalExVat,
+        totalExVat: fallback.totalExVat,
+        totalIncVat: fallback.totalIncVat
+      };
 
-              await notifyPrices(profileName, incomingFrom, {
-                requestedVehicle,
-                startLabel: dateRange.startLabel,
-                endLabel: dateRange.endLabel,
-                vehicles: topVehicles
-              });
+      if (canUseNexi()) {
+        try {
+          const payment = await createNexiPayMailLink({
+            amountCents: euroToCents(fallback.totalIncVat),
+            description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
+            customerWhatsapp: formatWhatsappNumber(incomingFrom)
+          });
+          internalExtra.paymentLink = payment.payMailUrl;
+        } catch (error) {
+          console.error('Errore Nexi noleggio fallback:', error.message);
+        }
+      }
+    }
 
-              session.state = 'vehicle_choice';
-              session.pendingOptions = {
-                requestedVehicle,
-                startLabel: dateRange.startLabel,
-                endLabel: dateRange.endLabel,
-                days: dateRange.days,
-                vehicles: topVehicles
-              };
-
-              twiml.message(
-                buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, topVehicles)
-              );
-              res.writeHead(200, { 'Content-Type': 'text/xml' });
-              return res.end(twiml.toString());
-            }
-
-            internalExtra = {
-              unavailable: true,
-              requestedVehicle,
-              startLabel: dateRange.startLabel,
-              endLabel: dateRange.endLabel
-            };
-
-            confirmationMessage = buildCustomerConfirmation(
-              session.intent,
-              profileName,
-              internalExtra
-            );
-
+    confirmationMessage = buildCustomerConfirmation(
+      session.intent,
+      profileName,
+      internalExtra
+    );
+  }
             session.state = 'questions';
             session.questionIndex = 1;
             session.answers = [requestedVehicle];

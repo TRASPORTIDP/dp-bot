@@ -116,7 +116,7 @@ async function createNexiPayMailLink({ amountCents, description, customerWhatsap
     }),
     timeout: String(NEXI_TIMEOUT_HOURS),
     url: `${APP_BASE_URL}/nexi/result`,
-    urlpost: `${APP_BASE_URL}/nexi/notify`,
+    
     parametriAggiuntivi: {
       source: 'whatsapp_bot',
       description: description || '',

@@ -329,14 +329,15 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
   <SOAP-ENV:Body>
     <ns1:OTA_VehAvailRateRQ>
       ${buildSoapAuthBlock()}
-      <VehAvailRQCore PickUpDateTime="${pickUpDateTime}" ReturnDateTime="${returnDateTime}">
-        <PickUpLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
-        <ReturnLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+      <VehAvailRQCore>
+        <VehRentalCore PickUpDateTime="${pickUpDateTime}" ReturnDateTime="${returnDateTime}">
+          <PickUpLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+          <ReturnLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+        </VehRentalCore>
       </VehAvailRQCore>
     </ns1:OTA_VehAvailRateRQ>
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`;
-
   const response = await fetch(CARRENTAL_AVAIL_URL, {
     method: 'POST',
     headers: {

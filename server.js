@@ -61,8 +61,7 @@ function saveSessionsToFile() {
   }
 }
 
-const sessions = loadSessionsFromFile();
-
+const sessions = {};
 // =========================
 // NEXI
 // =========================

@@ -235,17 +235,6 @@ function findFirstByKeys(obj, keys) {
   return null;
 }
 
-function cleanVehicleNameParts(parts) {
-  for (const part of parts) {
-    const value = String(part || '')
-      .replace(/\s+/g, ' ')
-      .replace(/_/g, ' ')
-      .trim();
-    if (value) return value;
-  }
-  return '';
-}
-
 function prettifyVehicleCode(code) {
   const c = String(code || '').toUpperCase().trim();
 
@@ -262,29 +251,26 @@ function prettifyVehicleCode(code) {
 }
 
 function normalizeVehicleLabel(item) {
-
+  const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
   const vehicle =
     item?.Vehicle ||
     item?.['ns1:Vehicle'] ||
-    item?.VehAvailCore?.Vehicle ||
+    vehAvailCore?.Vehicle ||
     {};
   const makeModel =
     item?.VehMakeModel ||
     item?.['ns1:VehMakeModel'] ||
     vehicle?.VehMakeModel ||
     {};
-
   const vehClass =
     item?.VehClass ||
     item?.['ns1:VehClass'] ||
     {};
-
   const vehType =
     item?.VehType ||
     item?.['ns1:VehType'] ||
     {};
 
-  // 🔑 CODICE mezzo (F1-VAN, F2-PC, P2-9P ecc)
   const code =
     vehicle?.['@_Code'] ||
     makeModel?.['@_Code'] ||
@@ -292,7 +278,6 @@ function normalizeVehicleLabel(item) {
     vehType?.['@_Code'] ||
     '';
 
-  // 🔑 NOME mezzo
   let name =
     vehicle?.['@_Description'] ||
     vehicle?.['@_Name'] ||
@@ -301,74 +286,28 @@ function normalizeVehicleLabel(item) {
     vehType?.['@_VehicleCategory'] ||
     '';
 
-  // 👉 fallback intelligente (importantissimo)
   if (!name) {
-    if (code.startsWith('F1')) name = 'Furgone';
-    else if (code.startsWith('F2')) name = 'Furgone commerciale';
-    else if (code.startsWith('P2')) name = 'Pulmino 9 posti';
-    else if (code.startsWith('A1')) name = 'Auto compatta';
-    else if (code.startsWith('A2')) name = 'Auto media';
-    else if (code.startsWith('A3')) name = 'Auto premium';
-    else name = 'Veicolo disponibile';
+    name = prettifyVehicleCode(code) || 'Veicolo disponibile';
   }
 
-  // 💰 prezzo
   const totalCharge =
     item?.TotalCharge ||
     item?.['ns1:TotalCharge'] ||
-    findFirstByKeys(item, ['TotalCharge', 'ns1:TotalCharge']) ||
-    {};
-
-  const estimatedTotalAmount =
-    totalCharge?.['@_EstimatedTotalAmount'] ||
-    totalCharge?.EstimatedTotalAmount ||
-    totalCharge?.['@_RateTotalAmount'] ||
-    null;
-
-  return {
-    code: String(code || '').trim(),
-    name: name.trim(),
-    estimatedTotalAmount: estimatedTotalAmount
-      ? Number(estimatedTotalAmount)
-      : null,
-    raw: item
-  };
-
-
-  const rawDescription = cleanVehicleNameParts([
-    vehicle?.['@_Description'],
-    vehicle?.Description,
-    vehMakeModel?.['@_Name'],
-    vehMakeModel?.Name,
-    vehicle?.['@_Name'],
-    vehicle?.Name,
-    vehClass?.['@_Name'],
-    vehClass?.Name,
-    vehType?.['@_VehicleCategory'],
-    vehType?.VehicleCategory
-  ]);
-
-  const prettyCode = prettifyVehicleCode(code);
-  const normalizedName = rawDescription || prettyCode || 'Mezzo disponibile';
-
-  const totalCharge =
     vehAvailCore?.TotalCharge ||
-    vehRentalCore?.TotalCharge ||
-    item?.TotalCharge ||
     findFirstByKeys(item, ['TotalCharge', 'ns1:TotalCharge']) ||
     {};
 
   const estimatedTotalAmount =
     totalCharge?.['@_EstimatedTotalAmount'] ||
-    totalCharge?.['@_RateTotalAmount'] ||
     totalCharge?.EstimatedTotalAmount ||
+    totalCharge?.['@_RateTotalAmount'] ||
     totalCharge?.RateTotalAmount ||
     null;
 
   return {
     code: String(code || '').trim(),
-    name: normalizedName,
-    estimatedTotalAmount: estimatedTotalAmount ? Number(estimatedTotalAmount) : null,
+    name: String(name || '').trim(),
+    estimatedTotalAmount: estimatedTotalAmount !== null ? Number(estimatedTotalAmount) : null,
     raw: item
   };
 }
@@ -401,24 +340,14 @@ function matchVehicleAgainstUserText(vehicle, userText) {
 
   if (!requestedCodes.length) return true;
 
-  if (requestedCodes.some((c) => codeUpper.includes(c))) {
-    return true;
-  }
+  if (requestedCodes.some((c) => codeUpper.includes(c))) return true;
 
   if (q.includes('furgone')) {
-    return (
-      nameLower.includes('furgone') ||
-      nameLower.includes('commerciale') ||
-      nameLower.includes('van')
-    );
+    return nameLower.includes('furgone') || nameLower.includes('van');
   }
 
   if (q.includes('pulmino') || q.includes('9 posti')) {
-    return (
-      nameLower.includes('pulmino') ||
-      nameLower.includes('9 posti') ||
-      nameLower.includes('8 posti')
-    );
+    return nameLower.includes('pulmino') || nameLower.includes('posti');
   }
 
   if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
@@ -976,8 +905,12 @@ function buildServiceChangedMessage(intent, profileName) {
 
 function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, vehicles) {
   const customerName = formatCustomerName(profileName);
+
   const lines = vehicles.slice(0, 3).map((v, i) => {
-    return `${i + 1}️⃣ *${v.name}*${v.code ? ` (${v.code})` : ''}\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
+    const label = v.code
+      ? `${v.name} (${v.code})`
+      : v.name;
+    return `${i + 1}️⃣ *${label}*\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
   });
 
   return (
@@ -1489,7 +1422,6 @@ app.post('/whatsapp', async (req, res) => {
       session = createSession(incomingFrom, profileName);
     }
 
-    // se il cliente scrive una parola-servizio da idle o menu
     if (session.state === 'idle') {
       const directIntent =
         intentFromMenuChoice(incomingText) ||
@@ -1554,7 +1486,9 @@ app.post('/whatsapp', async (req, res) => {
       let internalExtra = {
         fromCarRental: true,
         requestedVehicle: session.pendingOptions.requestedVehicle,
-        vehicleName: selected.name,
+        vehicleName: selected.code
+          ? `${selected.name} (${selected.code})`
+          : selected.name,
         vehicleCode: selected.code,
         startLabel: session.pendingOptions.startLabel,
         endLabel: session.pendingOptions.endLabel,
@@ -1670,6 +1604,19 @@ app.post('/whatsapp', async (req, res) => {
               startDate: dateRange.startDate,
               endDate: dateRange.endDate
             });
+
+            console.log(
+              'VEICOLI TROVATI:',
+              JSON.stringify(
+                avail.vehicles.map((v) => ({
+                  code: v.code,
+                  name: v.name,
+                  estimatedTotalAmount: v.estimatedTotalAmount
+                })),
+                null,
+                2
+              )
+            );
 
             if (avail.vehicles.length > 0) {
               const topVehicles = avail.vehicles.slice(0, 3);

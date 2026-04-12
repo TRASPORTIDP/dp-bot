@@ -3,6 +3,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { XMLParser } = require('fast-xml-parser');
 
 const app = express();
@@ -36,27 +38,30 @@ const LINK_OFFICINA =
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
 
 // =========================
-// SESSIONI IN MEMORIA
+// SESSIONI SU FILE
 // =========================
-const sessions = {};
-const processedMessageSids = new Map();
+const SESSIONS_FILE = path.join(__dirname, 'sessions.json');
 
-function rememberProcessedMessage(messageSid) {
-  if (!messageSid) return;
-  processedMessageSids.set(messageSid, Date.now());
-
-  const now = Date.now();
-  for (const [sid, ts] of processedMessageSids.entries()) {
-    if (now - ts > 15 * 60 * 1000) {
-      processedMessageSids.delete(sid);
-    }
+function loadSessionsFromFile() {
+  try {
+    if (!fs.existsSync(SESSIONS_FILE)) return {};
+    const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.error('Errore caricamento sessions.json:', error.message);
+    return {};
   }
 }
 
-function alreadyProcessedMessage(messageSid) {
-  if (!messageSid) return false;
-  return processedMessageSids.has(messageSid);
+function saveSessionsToFile() {
+  try {
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Errore salvataggio sessions.json:', error.message);
+  }
 }
+
+const sessions = loadSessionsFromFile();
 
 // =========================
 // NEXI
@@ -250,17 +255,13 @@ function normalizeVehicleLabel(item) {
     vehType?.['@_Code'] ||
     '';
 
-  const description =
-    vehicle?.['@_Description'] ||
+  const name =
     vehMakeModel?.['@_Name'] ||
     vehicle?.['@_Name'] ||
     vehClass?.['@_Name'] ||
     vehType?.['@_VehicleCategory'] ||
-    '';
-
-  const normalizedName = String(description || code || 'Veicolo disponibile')
-    .replace(/\s+/g, ' ')
-    .trim();
+    code ||
+    'Veicolo disponibile';
 
   const totalCharge =
     vehAvailCore?.TotalCharge ||
@@ -278,7 +279,7 @@ function normalizeVehicleLabel(item) {
 
   return {
     code: String(code || '').trim(),
-    name: normalizedName,
+    name: String(name || 'Veicolo disponibile').trim(),
     estimatedTotalAmount: estimatedTotalAmount ? Number(estimatedTotalAmount) : null,
     raw: item
   };
@@ -328,11 +329,9 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
   <SOAP-ENV:Body>
     <ns1:OTA_VehAvailRateRQ>
       ${buildSoapAuthBlock()}
-      <VehAvailRQCore>
-        <VehRentalCore PickUpDateTime="${pickUpDateTime}" ReturnDateTime="${returnDateTime}">
-          <PickUpLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
-          <ReturnLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
-        </VehRentalCore>
+      <VehAvailRQCore PickUpDateTime="${pickUpDateTime}" ReturnDateTime="${returnDateTime}">
+        <PickUpLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
+        <ReturnLocation LocationCode="${CARRENTAL_LOCATION_CODE}"/>
       </VehAvailRQCore>
     </ns1:OTA_VehAvailRateRQ>
   </SOAP-ENV:Body>
@@ -593,10 +592,6 @@ function computeNoleggioFallback(answers) {
   };
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // =========================
 // INTENT
 // =========================
@@ -696,7 +691,8 @@ function intentFromMenuChoice(text) {
   if (msg === '5') return 'contatto_diretto';
   if (msg === '6') return 'parcheggio_sosta';
 
-  return null;
+  const detected = detectIntent(msg);
+  return detected !== 'generico' ? detected : null;
 }
 
 function detectServiceSwitch(text, currentIntent) {
@@ -742,9 +738,9 @@ function buildWelcomeMenu(profileName) {
   const customerName = formatCustomerName(profileName);
 
   return (
-    `Ciao ${customerName} 👋\n\n` +
-    'Benvenuto in *Trasporti DP*.\n' +
-    'Dimmi pure di cosa hai bisogno scegliendo il servizio:\n\n' +
+    `Salve ${customerName} 👋\n` +
+    'Benvenuto in *Trasporti DP*.\n\n' +
+    'Per poterla assistere al meglio, selezioni il servizio di suo interesse rispondendo con il numero corrispondente:\n\n' +
     '1️⃣ *Officina* 🔧\n' +
     '2️⃣ *Noleggio* 🚐\n' +
     '3️⃣ *Vendita auto* 🚗\n' +
@@ -758,76 +754,76 @@ function buildStartMessageByIntent(intent, profileName) {
   const customerName = formatCustomerName(profileName);
 
   if (intent === 'officina') {
-    return `Perfetto ${customerName} 👌\n\nTi passo sul reparto *Officina*.\nPer aiutarti al meglio ti chiedo due informazioni rapide.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata al reparto *Officina* 🔧.\n\nLe chiediamo gentilmente alcune informazioni per gestirla al meglio.`;
   }
 
   if (intent === 'noleggio') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Noleggio*.\nMi servono solo due informazioni per controllare disponibilità e prezzo.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata al reparto *Noleggio* 🚐.\n\nLe chiediamo gentilmente alcune informazioni per procedere.`;
   }
 
   if (intent === 'vendita') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto per la *Vendita auto*.\nTi faccio qualche domanda veloce così il nostro staff ti risponde meglio.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata al reparto *Vendita auto* 🚗.\n\nLe chiediamo gentilmente alcune informazioni per aiutarla al meglio.`;
   }
 
   if (intent === 'trasporto') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Trasporto veicoli*.\nMi servono alcuni dettagli per organizzare tutto al meglio.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata al reparto *Trasporto veicoli* 🚛.\n\nLe chiediamo gentilmente alcune informazioni per organizzarla.`;
   }
 
   if (intent === 'contatto_diretto') {
-    return `Perfetto ${customerName} 👌\n\nTi metto in contatto con un *responsabile*.\nScrivimi solo due righe sul motivo della richiesta.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata a un *responsabile* 📞.\n\nLe chiediamo gentilmente alcune informazioni per poterla ricontattare al più presto.`;
   }
 
   if (intent === 'parcheggio_sosta') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto con *Parcheggio / Sosta*.\nMi servono alcune informazioni per verificare disponibilità e importo.`;
+    return `Salve ${customerName} 👋\n\nLa sua richiesta è stata indirizzata al servizio *Parcheggio / Sosta* 🅿️.\n\nLe chiediamo gentilmente alcune informazioni per verificare disponibilità, servizi e importo.`;
   }
 
-  return `Ciao ${customerName} 👋`;
+  return `Salve ${customerName} 👋`;
 }
 
 function buildQuestions(intent) {
   if (intent === 'officina') {
     return [
-      'Che *veicolo* hai?',
-      'Puoi indicarmi la *targa*?',
-      'Che *problema* ha il veicolo oppure quale *intervento* vuoi fare?',
-      'Hai un *giorno preferito* per l’appuntamento?'
+      'Qual è il *modello del veicolo*?',
+      'Può indicarci la *targa*?',
+      'Qual è il *problema* oppure quale *intervento* desidera effettuare?',
+      'Ha un *giorno preferito* per l’appuntamento?'
     ];
   }
 
   if (intent === 'noleggio') {
     return [
-      'Che *mezzo* ti serve? (es. *pulmino*, *furgone*, *auto*)',
-      'Puoi indicarmi le *date del noleggio* in questo formato?\n\nEsempio: *10/05 - 15/05*'
+      'Che *mezzo* le occorre? (es. *pulmino*, *furgone*, *auto*)',
+      'Può indicarci le *date del noleggio* in questo formato?\n\nEsempio: *10/05 - 15/05*'
     ];
   }
 
   if (intent === 'vendita') {
     return [
-      'Che tipo di *auto* stai cercando?',
-      'Qual è il tuo *budget indicativo*?',
-      'Hai una *permuta*? Se sì, scrivimi modello e anno.'
+      'Che tipo di *auto* sta cercando?',
+      'Qual è il suo *budget indicativo*?',
+      'Ha una *permuta*? Se sì, ci indichi modello e anno.'
     ];
   }
 
   if (intent === 'trasporto') {
     return [
       'Qual è il *veicolo da trasportare*?',
-      'Da dove va *ritirato*?',
-      'Dove va *consegnato*?',
-      'Per quando ti servirebbe il *trasporto*?'
+      'Qual è il *luogo di ritiro*?',
+      'Qual è il *luogo di consegna*?',
+      'Entro quando sarebbe necessario il *trasporto*?'
     ];
   }
 
   if (intent === 'contatto_diretto') {
-    return ['Scrivimi brevemente il *motivo della richiesta*.'];
+    return ['Può indicarci brevemente il *motivo della richiesta*?'];
   }
 
   if (intent === 'parcheggio_sosta') {
     return [
-      'Che *tipo di mezzo* devi lasciare? (es. auto, furgone, camper, carrello)',
-      'Puoi indicarmi le *date della sosta* in questo formato?\n\nEsempio: *10/05 - 15/05*',
-      'Hai bisogno di *corrente*? (sì / no)',
-      'Hai bisogno di *acqua*? (sì / no)'
+      'Qual è il *tipo di mezzo*? (es. auto, furgone, camper, carrello, altro)',
+      'Può indicarci le *date della sosta* in questo formato?\n\nEsempio: *10/05 - 15/05*',
+      'Ha bisogno di *corrente*? (sì / no)',
+      'Ha bisogno di *acqua*? (sì / no)'
     ];
   }
 
@@ -836,20 +832,20 @@ function buildQuestions(intent) {
 
 function buildInvalidChoiceMessage() {
   return (
-    'Non ho capito la scelta 😊\n\n' +
-    'Rispondi con:\n' +
-    '1️⃣ Officina\n' +
-    '2️⃣ Noleggio\n' +
-    '3️⃣ Vendita auto\n' +
-    '4️⃣ Trasporto veicoli\n' +
-    '5️⃣ Contatto diretto / Responsabile\n' +
-    '6️⃣ Parcheggio / Sosta'
+    'Scelta non riconosciuta.\n\n' +
+    'Per favore risponda con:\n' +
+    '1️⃣ per *Officina* 🔧\n' +
+    '2️⃣ per *Noleggio* 🚐\n' +
+    '3️⃣ per *Vendita auto* 🚗\n' +
+    '4️⃣ per *Trasporto veicoli* 🚛\n' +
+    '5️⃣ per *Contatto diretto / Responsabile* 📞\n' +
+    '6️⃣ per *Parcheggio / Sosta* 🅿️'
   );
 }
 
 function buildServiceChangedMessage(intent, profileName) {
   return (
-    'Va bene, cambiamo subito servizio 👍\n\n' +
+    'Perfetto, aggiorniamo subito il servizio richiesto.\n\n' +
     buildStartMessageByIntent(intent, profileName) +
     '\n\n' +
     buildQuestions(intent)[0]
@@ -859,14 +855,15 @@ function buildServiceChangedMessage(intent, profileName) {
 function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, vehicles) {
   const customerName = formatCustomerName(profileName);
   const lines = vehicles.slice(0, 3).map((v, i) => {
-    return `${i + 1}️⃣ *${v.name}*${v.code ? ` (${v.code})` : ''}\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
+    return `${i + 1}️⃣ *${v.name}* (${v.code || '-'})\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
   });
 
   return (
     `Perfetto ${customerName} 👌\n\n` +
-    `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n\n` +
+    `Abbiamo trovato queste disponibilità per *${requestedVehicle}* ` +
+    `dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n\n` +
     `${lines.join('\n\n')}\n\n` +
-    'Scrivimi *1*, *2* oppure *3* per scegliere il mezzo che preferisci.'
+    'Risponda con il numero del mezzo che vuole prenotare:\n*1*, *2* oppure *3*.'
   );
 }
 
@@ -875,113 +872,116 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
 
   if (intent === 'officina') {
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'Ho inoltrato correttamente la tua richiesta al reparto *Officina*.\n' +
-      'Ti ricontatteremo il prima possibile su questo numero WhatsApp.\n\n' +
-      `Se preferisci, puoi prenotare direttamente anche da qui:\n${LINK_OFFICINA}`
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il reparto *Officina* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.\n\n' +
+      `Per prenotare direttamente può usare anche questo link:\n${LINK_OFFICINA}`
     );
   }
 
   if (intent === 'noleggio') {
     if (extra.unavailable) {
       return (
-        `Grazie ${customerName} 🙏\n\n` +
-        `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
-        'Ho comunque inoltrato la richiesta al nostro staff, che ti ricontatterà al più presto su questo numero.'
+        `La ringraziamo ${customerName}.\n\n` +
+        `Al momento non risultano disponibilità dal gestionale per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
+        'La sua richiesta è stata comunque inoltrata al nostro staff, che la ricontatterà sul numero WhatsApp da cui ci sta scrivendo.'
       );
     }
 
     if (extra.fromCarRental) {
       return (
-        `Grazie ${customerName} ✅\n\n` +
-        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
+        `La ringraziamo ${customerName} ✅\n\n` +
+        'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.\n\n' +
         `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
-        `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+        `📅 *Periodo richiesto:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
         `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}\n\n` +
-        `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
-        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
+        `Può effettuare il pagamento del *solo costo del noleggio* qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
+        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.\n\n` +
+        'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
       );
     }
 
     const datesPart =
       extra.startLabel && extra.endLabel
-        ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
+        ? `\nPeriodo richiesto: *dal ${extra.startLabel} al ${extra.endLabel}* (${extra.days} giorni).`
         : '';
 
     const pricePart =
       extra.baseTotalExVat !== undefined
         ? `\n\n💰 *Costo noleggio:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
-          `\n💰 *Totale con IVA:* € ${formatEuroNumber(extra.baseTotalIncVat)}` +
+          `\n💰 *Totale noleggio con IVA:* € ${formatEuroNumber(extra.baseTotalIncVat)}` +
           `\n🚗 *Km inclusi:* ${extra.kmIncluded} km` +
           `\n📍 *Extra km:* € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km`
         : '';
 
     const paymentPart =
       extra.paymentLink
-        ? `\n\nPuoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink}` +
+        ? `\n\nPuò effettuare il pagamento del *solo costo del noleggio* qui:\n${extra.paymentLink}` +
           `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
         : `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`;
 
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.' +
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il reparto *Noleggio* è stata registrata correttamente e inoltrata al nostro staff.' +
       datesPart +
       pricePart +
+      '\n\nSarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.' +
       paymentPart
     );
   }
 
   if (intent === 'vendita') {
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'Ho inoltrato correttamente la tua richiesta al reparto *Vendita auto*.\n' +
-      'Ti ricontatteremo al più presto su questo numero WhatsApp.'
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il reparto *Vendita auto* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
   if (intent === 'trasporto') {
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'Ho inoltrato correttamente la tua richiesta al reparto *Trasporto veicoli*.\n' +
-      'Ti ricontatteremo al più presto su questo numero WhatsApp.'
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il reparto *Trasporto veicoli* è stata registrata correttamente e inoltrata al nostro staff.\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
   if (intent === 'contatto_diretto') {
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'Ho inoltrato la tua richiesta a un nostro *responsabile*.\n' +
-      'Ti ricontatteremo il prima possibile su questo numero WhatsApp.'
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta è stata inoltrata a un nostro *responsabile*.\n' +
+      'Sarà ricontattato al più presto *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
   if (intent === 'parcheggio_sosta') {
     const amountLabel = extra.amountCents
-      ? `\n\n💰 *Importo calcolato:* € ${eurosFromCents(extra.amountCents)}`
+      ? `\n\n*Importo calcolato:* € ${eurosFromCents(extra.amountCents)}`
       : '';
 
     const periodLabel =
       extra.startLabel && extra.endLabel
-        ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
+        ? `\n*Periodo richiesto:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
         : '';
 
     const paymentPart = extra.paymentLink
-      ? `\n\nPer confermare puoi effettuare il pagamento qui:\n${extra.paymentLink}`
-      : '\n\nTi invieremo conferma e modalità di pagamento al più presto.';
+      ? `\n\nPer confermare in autonomia può effettuare il pagamento qui:\n${extra.paymentLink}`
+      : '\n\nIl nostro staff le invierà conferma e modalità di pagamento al più presto.';
 
     return (
-      `Grazie ${customerName} ✅\n\n` +
-      'La tua richiesta per *Parcheggio / Sosta* è stata registrata correttamente.' +
+      `La ringraziamo ${customerName} ✅\n\n` +
+      'La sua richiesta per il servizio *Parcheggio / Sosta* è stata registrata correttamente.' +
       periodLabel +
       amountLabel +
-      paymentPart
+      paymentPart +
+      '\n\nSarà ricontattato al bisogno *sul numero WhatsApp da cui ci sta scrivendo*.'
     );
   }
 
   return (
-    `Grazie ${customerName} ✅\n\n` +
-    'Ho ricevuto correttamente la tua richiesta.\n' +
-    'Ti ricontatteremo al più presto.'
+    `La ringraziamo ${customerName} ✅\n\n` +
+    'La sua richiesta è stata ricevuta correttamente.\n' +
+    'Sarà ricontattato dal nostro staff al più presto.'
   );
 }
 
@@ -994,14 +994,14 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 NUOVA RICHIESTA NOLEGGIO DAL GESTIONALE\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Richiesta mezzo: ${a[0] || '-'}\n` +
       `Periodo: dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
       `Mezzo scelto: ${extra.vehicleName || '-'}\n` +
       `Codice mezzo: ${extra.vehicleCode || '-'}\n` +
-      `Prezzo: € ${formatEuroNumber(extra.estimatedTotalAmount)}\n` +
+      `Prezzo stimato gestionale: € ${formatEuroNumber(extra.estimatedTotalAmount)}\n` +
       `Caparra separata: € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}\n` +
-      (extra.paymentLink ? `Link Nexi: ${extra.paymentLink}\n` : '')
+      (extra.paymentLink ? `Link Nexi noleggio: ${extra.paymentLink}\n` : '')
     );
   }
 
@@ -1009,7 +1009,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 RICHIESTA NOLEGGIO SENZA DISPONIBILITÀ\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Richiesta mezzo: ${extra.requestedVehicle || a[0] || '-'}\n` +
       `Periodo: dal ${extra.startLabel || '-'} al ${extra.endLabel || '-'}\n`
     );
@@ -1019,8 +1019,8 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 NUOVA RICHIESTA OFFICINA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
-      `Veicolo: ${a[0] || '-'}\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Modello veicolo: ${a[0] || '-'}\n` +
       `Targa: ${a[1] || '-'}\n` +
       `Problema / intervento: ${a[2] || '-'}\n` +
       `Giorno preferito: ${a[3] || '-'}`
@@ -1030,23 +1030,23 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
   if (session.intent === 'noleggio') {
     const dateRange = extractDateRange(a[1]);
     const periodLine = dateRange
-      ? `Periodo: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
+      ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
       : `Date richieste: ${a[1] || '-'}\n`;
 
     return (
       `🔔 NUOVA RICHIESTA NOLEGGIO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Mezzo richiesto: ${a[0] || '-'}\n` +
       periodLine +
       (extra.baseTotalExVat !== undefined
         ? `Costo noleggio: € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%\n` +
-          `Totale con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
+          `Totale noleggio con IVA: € ${formatEuroNumber(extra.baseTotalIncVat)}\n` +
           `Km inclusi: ${extra.kmIncluded} km\n` +
           `Extra km: € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km\n`
         : '') +
-      `Caparra separata: € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}\n` +
-      (extra.paymentLink ? `Link Nexi: ${extra.paymentLink}\n` : '')
+      `Caparra da gestire a parte: € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}\n` +
+      (extra.paymentLink ? `Link pagamento costo noleggio Nexi: ${extra.paymentLink}\n` : '')
     );
   }
 
@@ -1054,9 +1054,9 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 NUOVA RICHIESTA VENDITA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
       `Auto cercata: ${a[0] || '-'}\n` +
-      `Budget: ${a[1] || '-'}\n` +
+      `Budget indicativo: ${a[1] || '-'}\n` +
       `Permuta: ${a[2] || '-'}`
     );
   }
@@ -1065,10 +1065,10 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 NUOVA RICHIESTA TRASPORTO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
-      `Veicolo: ${a[0] || '-'}\n` +
-      `Ritiro: ${a[1] || '-'}\n` +
-      `Consegna: ${a[2] || '-'}\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Veicolo da trasportare: ${a[0] || '-'}\n` +
+      `Luogo ritiro: ${a[1] || '-'}\n` +
+      `Luogo consegna: ${a[2] || '-'}\n` +
       `Quando serve: ${a[3] || '-'}`
     );
   }
@@ -1077,34 +1077,34 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
     return (
       `🔔 NUOVA RICHIESTA CONTATTO DIRETTO\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
-      `Motivo: ${a[0] || '-'}`
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Motivo richiesta: ${a[0] || '-'}`
     );
   }
 
   if (session.intent === 'parcheggio_sosta') {
     const dateRange = extractDateRange(a[1]);
     const periodLine = dateRange
-      ? `Periodo: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
+      ? `Periodo richiesto: dal ${dateRange.startLabel} al ${dateRange.endLabel} (${dateRange.days} giorni)\n`
       : `Date richieste: ${a[1] || '-'}\n`;
 
     return (
       `🔔 NUOVA RICHIESTA PARCHEGGIO / SOSTA\n\n` +
       `👤 Nome WhatsApp: ${customerName}\n` +
-      `📞 Numero cliente: ${whatsappNumber}\n\n` +
-      `Tipo mezzo: ${a[0] || '-'}\n` +
+      `📞 Numero WhatsApp cliente: ${whatsappNumber}\n\n` +
+      `Tipo di mezzo: ${a[0] || '-'}\n` +
       periodLine +
-      `Corrente: ${yesNoLabel(a[2])}\n` +
-      `Acqua: ${yesNoLabel(a[3])}\n` +
-      (extra.amountCents ? `Importo: € ${eurosFromCents(extra.amountCents)}\n` : '') +
-      (extra.paymentLink ? `Link Nexi: ${extra.paymentLink}\n` : '')
+      `Corrente richiesta: ${yesNoLabel(a[2])}\n` +
+      `Acqua richiesta: ${yesNoLabel(a[3])}\n` +
+      (extra.amountCents ? `Importo calcolato: € ${eurosFromCents(extra.amountCents)}\n` : '') +
+      (extra.paymentLink ? `Link pagamento Nexi: ${extra.paymentLink}\n` : '')
     );
   }
 
   return (
     `🔔 NUOVA RICHIESTA GENERICA\n\n` +
     `👤 Nome WhatsApp: ${customerName}\n` +
-    `📞 Numero cliente: ${whatsappNumber}`
+    `📞 Numero WhatsApp cliente: ${whatsappNumber}`
   );
 }
 
@@ -1114,7 +1114,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
 function createSession(phone, profileName) {
   sessions[phone] = {
     profileName,
-    state: 'idle',
+    state: 'menu',
     intent: null,
     questionIndex: 0,
     questions: [],
@@ -1122,13 +1122,14 @@ function createSession(phone, profileName) {
     createdAt: Date.now(),
     pendingOptions: null
   };
+  saveSessionsToFile();
   return sessions[phone];
 }
 
 function resetSession(phone, profileName = 'Cliente') {
   sessions[phone] = {
     profileName,
-    state: 'idle',
+    state: 'menu',
     intent: null,
     questionIndex: 0,
     questions: [],
@@ -1136,11 +1137,13 @@ function resetSession(phone, profileName = 'Cliente') {
     createdAt: Date.now(),
     pendingOptions: null
   };
+  saveSessionsToFile();
   return sessions[phone];
 }
 
 function clearSession(phone) {
   delete sessions[phone];
+  saveSessionsToFile();
 }
 
 function setSessionIntent(session, intent) {
@@ -1151,6 +1154,7 @@ function setSessionIntent(session, intent) {
   session.answers = [];
   session.pendingOptions = null;
   session.createdAt = Date.now();
+  saveSessionsToFile();
 }
 
 function isExpired(session) {
@@ -1170,7 +1174,7 @@ function validateAnswer(session, answer) {
     if (!['1', '2', '3'].includes(normalize(text))) {
       return {
         valid: false,
-        message: 'Scrivimi semplicemente *1*, *2* oppure *3*.'
+        message: 'Per favore risponda con *1*, *2* oppure *3*.'
       };
     }
   }
@@ -1182,7 +1186,7 @@ function validateAnswer(session, answer) {
         return {
           valid: false,
           message:
-            'Prima indicami il *mezzo richiesto* 😊\n\nEsempio: *pulmino*, *furgone*, *auto*.'
+            'Ci scusi, prima ci indichi il *mezzo richiesto*.\n\nEsempio: *pulmino*, *furgone*, *auto*.'
         };
       }
     }
@@ -1193,7 +1197,7 @@ function validateAnswer(session, answer) {
         return {
           valid: false,
           message:
-            'Non riesco a leggere bene le date.\n\nScrivile così:\n*10/05 - 15/05*'
+            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
         };
       }
     }
@@ -1206,7 +1210,7 @@ function validateAnswer(session, answer) {
         return {
           valid: false,
           message:
-            'Prima indicami il *tipo di mezzo* 😊\n\nEsempio: *Auto*, *Furgone*, *Camper*.'
+            'Ci scusi, prima ci indichi il *tipo di mezzo*.\n\nEsempio: *Auto*, *Furgone*, *Camper*.'
         };
       }
     }
@@ -1217,7 +1221,7 @@ function validateAnswer(session, answer) {
         return {
           valid: false,
           message:
-            'Non riesco a leggere bene le date.\n\nScrivile così:\n*10/05 - 15/05*'
+            'Formato date non riconosciuto.\n\nPer favore scriva così:\n*10/05 - 15/05*'
         };
       }
     }
@@ -1227,7 +1231,7 @@ function validateAnswer(session, answer) {
       if (yn !== 'SÌ' && yn !== 'NO') {
         return {
           valid: false,
-          message: 'Rispondimi solo con *sì* oppure *no*.'
+          message: 'Per favore risponda solo con *sì* oppure *no*.'
         };
       }
     }
@@ -1321,29 +1325,16 @@ app.get('/test-carrental-avail', async (req, res) => {
 // =========================
 app.post('/whatsapp', async (req, res) => {
   const incomingText = cleanText(req.body.Body);
-  const incomingFrom = (req.body.From || '').toLowerCase().trim();
+  const incomingFrom = req.body.From || '';
   const profileName = req.body.ProfileName || 'Cliente';
-  const messageSid = req.body.MessageSid || '';
   const twiml = new twilio.twiml.MessagingResponse();
 
   try {
-    console.log('NUMERO:', incomingFrom);
-    console.log('MESSAGGIO:', incomingText);
-    console.log('SID:', messageSid);
-
     if (!incomingFrom) {
       twiml.message('Si è verificato un errore nella ricezione del messaggio.');
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
-
-    if (alreadyProcessedMessage(messageSid)) {
-      console.log('Messaggio duplicato ignorato:', messageSid);
-      res.writeHead(200, { 'Content-Type': 'text/xml' });
-      return res.end(new twilio.twiml.MessagingResponse().toString());
-    }
-
-    rememberProcessedMessage(messageSid);
 
     let session = sessions[incomingFrom];
 
@@ -1354,7 +1345,10 @@ app.post('/whatsapp', async (req, res) => {
 
     if (normalize(incomingText) === 'reset') {
       resetSession(incomingFrom, profileName);
-      twiml.message('Conversazione resettata ✅\n\n' + buildWelcomeMenu(profileName));
+      twiml.message(
+        'Sessione resettata ✅\n\n' +
+          buildWelcomeMenu(profileName)
+      );
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -1368,20 +1362,17 @@ app.post('/whatsapp', async (req, res) => {
 
     if (!session) {
       session = createSession(incomingFrom, profileName);
-    }
 
-    if (session.state === 'idle') {
-      const directIntent = intentFromMenuChoice(incomingText);
+      const directIntent = intentFromMenuChoice(incomingText) || detectIntent(incomingText);
 
-      if (directIntent) {
+      if (directIntent && directIntent !== 'generico') {
         setSessionIntent(session, directIntent);
         twiml.message(
           buildStartMessageByIntent(directIntent, profileName) +
-          '\n\n' +
-          session.questions[0]
+            '\n\n' +
+            session.questions[0]
         );
       } else {
-        session.state = 'menu';
         twiml.message(buildWelcomeMenu(profileName));
       }
 
@@ -1401,8 +1392,8 @@ app.post('/whatsapp', async (req, res) => {
       setSessionIntent(session, chosenIntent);
       twiml.message(
         buildStartMessageByIntent(chosenIntent, profileName) +
-        '\n\n' +
-        session.questions[0]
+          '\n\n' +
+          session.questions[0]
       );
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1422,7 +1413,7 @@ app.post('/whatsapp', async (req, res) => {
       const selected = options[idx];
 
       if (!selected) {
-        twiml.message('Scelta non valida. Scrivimi *1*, *2* oppure *3*.');
+        twiml.message('Scelta non valida. Risponda con *1*, *2* oppure *3*.');
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
@@ -1501,6 +1492,7 @@ app.post('/whatsapp', async (req, res) => {
       session.answers.push(incomingText);
       session.questionIndex += 1;
       session.createdAt = Date.now();
+      saveSessionsToFile();
 
       if (session.questionIndex < session.questions.length) {
         twiml.message(session.questions[session.questionIndex]);
@@ -1558,6 +1550,8 @@ app.post('/whatsapp', async (req, res) => {
                 days: dateRange.days,
                 vehicles: topVehicles
               };
+              session.createdAt = Date.now();
+              saveSessionsToFile();
 
               twiml.message(
                 buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, topVehicles)
@@ -1676,7 +1670,7 @@ app.post('/whatsapp', async (req, res) => {
   } catch (error) {
     console.error('Errore generale:', error);
     twiml.message(
-      'Scusaci, al momento si è verificato un problema tecnico. Riprova tra poco oppure scrivici di nuovo.'
+      'La ringraziamo per il messaggio. Al momento si è verificato un problema tecnico. La invitiamo a riprovare tra poco.'
     );
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());

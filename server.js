@@ -37,7 +37,7 @@ const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
-const EXTRA_SERA_CENTS = 3000; // +30€ se il ritiro è oggi dopo le 17
+const EXTRA_SERA_CENTS = 3000; // +30€
 
 // =========================
 // MEMORIA
@@ -46,49 +46,6 @@ const sessions = {};
 const processedMessageSids = new Map();
 const processedMessageFingerprints = new Map();
 const transactions = {};
-
-// =========================
-// DEDUPLICA
-// =========================
-function rememberProcessedMessage(messageSid) {
-  if (!messageSid) return;
-  processedMessageSids.set(messageSid, Date.now());
-
-  const now = Date.now();
-  for (const [sid, ts] of processedMessageSids.entries()) {
-    if (now - ts > 15 * 60 * 1000) {
-      processedMessageSids.delete(sid);
-    }
-  }
-}
-
-function alreadyProcessedMessage(messageSid) {
-  if (!messageSid) return false;
-  return processedMessageSids.has(messageSid);
-}
-
-function buildMessageFingerprint(from, body) {
-  return `${String(from || '').trim().toLowerCase()}|${String(body || '')
-    .trim()
-    .toLowerCase()}`;
-}
-
-function rememberProcessedFingerprint(from, body) {
-  const key = buildMessageFingerprint(from, body);
-  processedMessageFingerprints.set(key, Date.now());
-
-  const now = Date.now();
-  for (const [fp, ts] of processedMessageFingerprints.entries()) {
-    if (now - ts > 8000) {
-      processedMessageFingerprints.delete(fp);
-    }
-  }
-}
-
-function alreadyProcessedFingerprint(from, body) {
-  const key = buildMessageFingerprint(from, body);
-  return processedMessageFingerprints.has(key);
-}
 
 // =========================
 // PREZZI
@@ -125,15 +82,6 @@ const NOLEGGIO_DEPOSIT_CENTS = parseInt(
 // =========================
 // UTILITY
 // =========================
-function isRitiroSerale() {
-  const now = new Date();
-  const hour = now.getHours();
-  const minutes = now.getMinutes();
-
-  const time = hour + minutes / 60;
-
-  return time >= 17 && time <= 18.5; // 18:30
-}
 function cleanText(text) {
   return (text || '').trim();
 }
@@ -282,19 +230,34 @@ function extractKilometers(text) {
   return km;
 }
 
-function isEveningPickup(startDate) {
-  if (!startDate) return false;
+function isSameDay(dateA, dateB) {
+  return (
+    dateA.getDate() === dateB.getDate() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getFullYear() === dateB.getFullYear()
+  );
+}
 
+function getNowDecimalHour() {
   const now = new Date();
+  return now.getHours() + now.getMinutes() / 60;
+}
 
-  const sameDay =
-    now.getDate() === startDate.getDate() &&
-    now.getMonth() === startDate.getMonth() &&
-    now.getFullYear() === startDate.getFullYear();
+function isRitiroSeraleWindow(startDate) {
+  if (!startDate) return false;
+  const now = new Date();
+  if (!isSameDay(now, startDate)) return false;
 
-  if (!sameDay) return false;
+  const time = getNowDecimalHour();
+  return time >= 17 && time <= 18.5;
+}
 
-  return now.getHours() >= 17;
+function isAfterEveningCutoff(startDate) {
+  if (!startDate) return false;
+  const now = new Date();
+  if (!isSameDay(now, startDate)) return false;
+
+  return getNowDecimalHour() > 18.5;
 }
 
 function computeSostaAmountCents(answers) {
@@ -329,7 +292,7 @@ function computeNoleggioQuote({ startDate, endDate, requestedKm }) {
   const totalExVat = baseTotalExVat + extraKmTotalExVat;
   const totalIncVat = totalExVat * (1 + IVA_RATE);
 
-  const extraSeraCents = isEveningPickup(startDate) ? EXTRA_SERA_CENTS : 0;
+  const extraSeraCents = isRitiroSeraleWindow(startDate) ? EXTRA_SERA_CENTS : 0;
   const totalIncVatWithEvening = totalIncVat + extraSeraCents / 100;
 
   return {
@@ -362,6 +325,49 @@ function computeNoleggioFallbackWithKm(answers) {
     endDate: dateRange.endDate,
     requestedKm
   });
+}
+
+// =========================
+// DEDUPLICA
+// =========================
+function rememberProcessedMessage(messageSid) {
+  if (!messageSid) return;
+  processedMessageSids.set(messageSid, Date.now());
+
+  const now = Date.now();
+  for (const [sid, ts] of processedMessageSids.entries()) {
+    if (now - ts > 15 * 60 * 1000) {
+      processedMessageSids.delete(sid);
+    }
+  }
+}
+
+function alreadyProcessedMessage(messageSid) {
+  if (!messageSid) return false;
+  return processedMessageSids.has(messageSid);
+}
+
+function buildMessageFingerprint(from, body) {
+  return `${String(from || '').trim().toLowerCase()}|${String(body || '')
+    .trim()
+    .toLowerCase()}`;
+}
+
+function rememberProcessedFingerprint(from, body) {
+  const key = buildMessageFingerprint(from, body);
+  processedMessageFingerprints.set(key, Date.now());
+
+  const now = Date.now();
+  for (const [fp, ts] of processedMessageFingerprints.entries()) {
+    if (now - ts > 8000) {
+      processedMessageFingerprints.delete(fp);
+    }
+  }
+}
+
+function alreadyProcessedFingerprint(from, body) {
+  const key = buildMessageFingerprint(from, body);
+  return processedMessageFingerprints.has(key);
 }
 
 // =========================
@@ -514,7 +520,14 @@ function toIsoDateTimeLocalStart(dateObj) {
   const y = dateObj.getFullYear();
   const m = String(dateObj.getMonth() + 1).padStart(2, '0');
   const d = String(dateObj.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}T09:00:00`;
+
+  let hour = '09';
+
+  if (isRitiroSeraleWindow(dateObj)) {
+    hour = '18';
+  }
+
+  return `${y}-${m}-${d}T${hour}:00:00`;
 }
 
 function toIsoDateTimeLocalEnd(dateObj) {
@@ -577,9 +590,7 @@ function prettifyVehicleCode(code) {
 }
 
 function humanizeVehicleName(name, code) {
-  const cleaned = String(name || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cleaned = String(name || '').replace(/\s+/g, ' ').trim();
   const upperCode = String(code || '').toUpperCase().trim();
 
   if (!cleaned) return prettifyVehicleCode(upperCode);
@@ -601,7 +612,10 @@ function humanizeVehicleName(name, code) {
 function normalizeVehicleLabel(item) {
   const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
   const vehicle =
-    item?.Vehicle || item?.['ns1:Vehicle'] || vehAvailCore?.Vehicle || {};
+    item?.Vehicle ||
+    item?.['ns1:Vehicle'] ||
+    vehAvailCore?.Vehicle ||
+    {};
   const makeModel =
     item?.VehMakeModel ||
     item?.['ns1:VehMakeModel'] ||
@@ -899,10 +913,12 @@ function intentFromMenuChoice(text) {
   if (msg === '2' || msg === 'noleggio') return 'noleggio';
   if (msg === '3' || msg === 'vendita') return 'vendita';
   if (msg === '4' || msg === 'trasporto') return 'trasporto';
-  if (msg === '5' || msg === 'responsabile' || msg === 'contatto diretto')
+  if (msg === '5' || msg === 'responsabile' || msg === 'contatto diretto') {
     return 'contatto_diretto';
-  if (msg === '6' || msg === 'parcheggio' || msg === 'sosta')
+  }
+  if (msg === '6' || msg === 'parcheggio' || msg === 'sosta') {
     return 'parcheggio_sosta';
+  }
 
   return null;
 }
@@ -1103,6 +1119,15 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       );
     }
 
+    if (extra.afterEveningCutoff) {
+      return (
+        `Grazie ${customerName} 🙏\n\n` +
+        'Per il *ritiro di oggi* il sistema automatico è disponibile solo fino alle *18:30*.\n\n' +
+        'Puoi scrivermi una *data da domani in poi* oppure un nuovo periodo.\n' +
+        'Esempio: *14/04 - 16/04*'
+      );
+    }
+
     if (extra.unavailable) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
@@ -1112,22 +1137,23 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       );
     }
 
-if (extra.fromCarRental) {
-  const extraText = extra.extraSera
-    ? '\n🌙 *Ritiro serale:* +30€'
-    : '';
+    if (extra.fromCarRental) {
+      const extraText = extra.extraSera
+        ? '\n🌙 *Ritiro serale:* +30€'
+        : '';
 
-  return (
-    `Grazie ${customerName} ✅\n\n` +
-    'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
-    `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
-    `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
-    `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
-    `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
-    `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
-    `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
-  );
-}
+      return (
+        `Grazie ${customerName} ✅\n\n` +
+        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
+        `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
+        `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+        `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
+        `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
+        `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
+        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
+      );
+    }
+
     const datesPart =
       extra.startLabel && extra.endLabel
         ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`
@@ -1304,7 +1330,7 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
 }
 
 // =========================
-// NOTIFICHE NOLEGGIO
+// NOTIFICHE
 // =========================
 async function notifyPrices(profileName, incomingFrom, data) {
   let text =
@@ -1674,25 +1700,12 @@ app.post('/whatsapp', async (req, res) => {
       if (isBackCommand(incomingText) || isAnotherDateCommand(incomingText)) {
         session.state = 'questions';
         session.questionIndex = 1;
-        session.answers = [session.pendingOptions?.requestedVehicle || session.answers[0]];
+        session.answers = [
+          session.pendingOptions?.requestedVehicle || session.answers[0]
+        ];
         session.pendingOptions = null;
         session.createdAt = Date.now();
 
-        if (
-  session &&
-  session.intent === 'noleggio' &&
-  session.state === 'questions' &&
-  session.questionIndex === 1 &&
-  extractDateRange(incomingText)
-) {
-  session.answers.push(incomingText);
-  session.questionIndex = 2;
-  session.createdAt = Date.now();
-
-  twiml.message(session.questions[2]);
-  res.writeHead(200, { 'Content-Type': 'text/xml' });
-  return res.end(twiml.toString());
-}
         twiml.message(
           'Va bene 👍\n\nMandami pure le date del noleggio.\n\n' +
             session.questions[1]
@@ -1766,78 +1779,6 @@ app.post('/whatsapp', async (req, res) => {
           '\n\n' +
           session.questions[0]
       );
-      res.writeHead(200, { 'Content-Type': 'text/xml' });
-      return res.end(twiml.toString());
-    }
-
-    if (session.state === 'vehicle_choice') {
-      const validation = validateAnswer(session, incomingText);
-      if (!validation.valid) {
-        twiml.message(validation.message);
-        res.writeHead(200, { 'Content-Type': 'text/xml' });
-        return res.end(twiml.toString());
-      }
-
-      const idx = parseInt(normalize(incomingText), 10) - 1;
-      const options = session.pendingOptions?.vehicles || [];
-      const selected = options[idx];
-
-      if (!selected) {
-        twiml.message(
-          'Scelta non valida 😊\n\n' +
-            'Scrivimi *1*, *2* oppure *3*.\n' +
-            'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
-        );
-        res.writeHead(200, { 'Content-Type': 'text/xml' });
-        return res.end(twiml.toString());
-      }
-let prezzoFinale = selected.estimatedTotalAmount;
-let extraSera = session.pendingOptions.extraSera || false;
-
-if (extraSera) {
-  prezzoFinale = Number(prezzoFinale || 0);
-}
-
-const internalExtra = {
-  fromCarRental: true,
-  requestedVehicle: session.pendingOptions.requestedVehicle,
-  vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
-  vehicleCode: selected.code,
-  startLabel: session.pendingOptions.startLabel,
-  endLabel: session.pendingOptions.endLabel,
-  days: session.pendingOptions.days,
-  requestedKm: session.pendingOptions.requestedKm || 0,
-  estimatedTotalAmount: prezzoFinale,
-  extraSera: extraSera
-};
-
-if (canUseNexi() && prezzoFinale !== null) {
-  try {
-    const payment = await createNexiPayMailLink({
-      amountCents: euroToCents(prezzoFinale),            description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`,
-            customerWhatsapp: formatWhatsappNumber(incomingFrom)
-          });
-
-          internalExtra.paymentLink = payment.payMailUrl;
-
-          transactions[payment.codiceTransazione] = {
-            codiceTransazione: payment.codiceTransazione,
-            customerName: profileName,
-            customerWhatsapp: incomingFrom,
-            vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
-            startLabel: session.pendingOptions.startLabel,
-            endLabel: session.pendingOptions.endLabel,
-            requestedKm: session.pendingOptions.requestedKm || 0,
-            amount: prezzoFinale
-          };
-        } catch (error) {
-          console.error('Errore Nexi scelta mezzo:', error.message);
-        }
-      }
-
-      twiml.message(buildCustomerConfirmation(session.intent, profileName, internalExtra));
-      clearSession(incomingFrom);
-
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -1920,6 +1861,29 @@ if (canUseNexi() && prezzoFinale !== null) {
         const requestedVehicle = session.answers[0];
         const dateRange = extractDateRange(session.answers[1]);
         const requestedKm = extractKilometers(session.answers[2]);
+
+        if (dateRange && requestedKm !== null) {
+          if (isAfterEveningCutoff(dateRange.startDate)) {
+            internalExtra = {
+              afterEveningCutoff: true
+            };
+
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              internalExtra
+            );
+
+            session.state = 'questions';
+            session.questionIndex = 1;
+            session.answers = [requestedVehicle];
+            session.createdAt = Date.now();
+
+            twiml.message(confirmationMessage);
+            res.writeHead(200, { 'Content-Type': 'text/xml' });
+            return res.end(twiml.toString());
+          }
+        }
 
         if (dateRange && requestedKm !== null && canUseCarRental()) {
           try {
@@ -2135,6 +2099,80 @@ if (canUseNexi() && prezzoFinale !== null) {
       }
 
       twiml.message(confirmationMessage);
+      clearSession(incomingFrom);
+
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
+    }
+
+    if (session.state === 'vehicle_choice') {
+      const validation = validateAnswer(session, incomingText);
+      if (!validation.valid) {
+        twiml.message(validation.message);
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      const idx = parseInt(normalize(incomingText), 10) - 1;
+      const options = session.pendingOptions?.vehicles || [];
+      const selected = options[idx];
+
+      if (!selected) {
+        twiml.message(
+          'Scelta non valida 😊\n\n' +
+            'Scrivimi *1*, *2* oppure *3*.\n' +
+            'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+        );
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      let prezzoFinale = selected.estimatedTotalAmount;
+      let extraSera = session.pendingOptions.extraSera || false;
+
+      if (extraSera) {
+        prezzoFinale = Number(prezzoFinale || 0);
+      }
+
+      const internalExtra = {
+        fromCarRental: true,
+        requestedVehicle: session.pendingOptions.requestedVehicle,
+        vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
+        vehicleCode: selected.code,
+        startLabel: session.pendingOptions.startLabel,
+        endLabel: session.pendingOptions.endLabel,
+        days: session.pendingOptions.days,
+        requestedKm: session.pendingOptions.requestedKm || 0,
+        estimatedTotalAmount: prezzoFinale,
+        extraSera: extraSera
+      };
+
+      if (canUseNexi() && prezzoFinale !== null) {
+        try {
+          const payment = await createNexiPayMailLink({
+            amountCents: euroToCents(prezzoFinale),
+            description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`,
+            customerWhatsapp: formatWhatsappNumber(incomingFrom)
+          });
+
+          internalExtra.paymentLink = payment.payMailUrl;
+
+          transactions[payment.codiceTransazione] = {
+            codiceTransazione: payment.codiceTransazione,
+            customerName: profileName,
+            customerWhatsapp: incomingFrom,
+            vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
+            startLabel: session.pendingOptions.startLabel,
+            endLabel: session.pendingOptions.endLabel,
+            requestedKm: session.pendingOptions.requestedKm || 0,
+            amount: prezzoFinale
+          };
+        } catch (error) {
+          console.error('Errore Nexi scelta mezzo:', error.message);
+        }
+      }
+
+      twiml.message(buildCustomerConfirmation(session.intent, profileName, internalExtra));
       clearSession(incomingFrom);
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });

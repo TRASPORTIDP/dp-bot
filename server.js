@@ -1103,23 +1103,22 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       );
     }
 
-    if (extra.fromCarRental) {
-      const extraText = extra.extraSera
-        ? '\n🌙 *Ritiro serale:* +30€'
-        : '';
+if (extra.fromCarRental) {
+  const extraText = extra.extraSera
+    ? '\n🌙 *Ritiro serale:* +30€'
+    : '';
 
-      return (
-        `Grazie ${customerName} ✅\n\n` +
-        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n` +
-        `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
-        `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
-        `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
-        `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
-        `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
-        `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
-      );
-    }
-
+  return (
+    `Grazie ${customerName} ✅\n\n` +
+    'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
+    `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
+    `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
+    `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
+    `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
+    `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
+    `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
+  );
+}
     const datesPart =
       extra.startLabel && extra.endLabel
         ? `\n📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)`

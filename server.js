@@ -1678,6 +1678,21 @@ app.post('/whatsapp', async (req, res) => {
         session.pendingOptions = null;
         session.createdAt = Date.now();
 
+        if (
+  session &&
+  session.intent === 'noleggio' &&
+  session.state === 'questions' &&
+  session.questionIndex === 1 &&
+  extractDateRange(incomingText)
+) {
+  session.answers.push(incomingText);
+  session.questionIndex = 2;
+  session.createdAt = Date.now();
+
+  twiml.message(session.questions[2]);
+  res.writeHead(200, { 'Content-Type': 'text/xml' });
+  return res.end(twiml.toString());
+}
         twiml.message(
           'Va bene 👍\n\nMandami pure le date del noleggio.\n\n' +
             session.questions[1]

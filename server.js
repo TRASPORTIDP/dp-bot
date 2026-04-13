@@ -125,6 +125,15 @@ const NOLEGGIO_DEPOSIT_CENTS = parseInt(
 // =========================
 // UTILITY
 // =========================
+function isRitiroSerale() {
+  const now = new Date();
+  const hour = now.getHours();
+  const minutes = now.getMinutes();
+
+  const time = hour + minutes / 60;
+
+  return time >= 17 && time <= 18.5; // 18:30
+}
 function cleanText(text) {
   return (text || '').trim();
 }
@@ -1767,25 +1776,30 @@ app.post('/whatsapp', async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
+let prezzoFinale = selected.estimatedTotalAmount;
+let extraSera = session.pendingOptions.extraSera || false;
 
-      const internalExtra = {
-        fromCarRental: true,
-        requestedVehicle: session.pendingOptions.requestedVehicle,
-        vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
-        vehicleCode: selected.code,
-        startLabel: session.pendingOptions.startLabel,
-        endLabel: session.pendingOptions.endLabel,
-        days: session.pendingOptions.days,
-        requestedKm: session.pendingOptions.requestedKm || 0,
-        estimatedTotalAmount: selected.estimatedTotalAmount,
-        extraSera: session.pendingOptions.extraSera || false
-      };
+if (extraSera) {
+  prezzoFinale = Number(prezzoFinale || 0);
+}
 
-      if (canUseNexi() && selected.estimatedTotalAmount !== null) {
-        try {
-          const payment = await createNexiPayMailLink({
-            amountCents: euroToCents(selected.estimatedTotalAmount),
-            description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`,
+const internalExtra = {
+  fromCarRental: true,
+  requestedVehicle: session.pendingOptions.requestedVehicle,
+  vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
+  vehicleCode: selected.code,
+  startLabel: session.pendingOptions.startLabel,
+  endLabel: session.pendingOptions.endLabel,
+  days: session.pendingOptions.days,
+  requestedKm: session.pendingOptions.requestedKm || 0,
+  estimatedTotalAmount: prezzoFinale,
+  extraSera: extraSera
+};
+
+if (canUseNexi() && prezzoFinale !== null) {
+  try {
+    const payment = await createNexiPayMailLink({
+      amountCents: euroToCents(prezzoFinale),            description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`,
             customerWhatsapp: formatWhatsappNumber(incomingFrom)
           });
 
@@ -1799,7 +1813,7 @@ app.post('/whatsapp', async (req, res) => {
             startLabel: session.pendingOptions.startLabel,
             endLabel: session.pendingOptions.endLabel,
             requestedKm: session.pendingOptions.requestedKm || 0,
-            amount: selected.estimatedTotalAmount
+            amount: prezzoFinale
           };
         } catch (error) {
           console.error('Errore Nexi scelta mezzo:', error.message);

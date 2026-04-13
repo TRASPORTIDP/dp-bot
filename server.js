@@ -676,9 +676,10 @@ function matchVehicleAgainstUserText(vehicle, userText) {
   const nameLower = String(vehicle.name || '').toLowerCase();
   const q = normalize(userText);
 
+  // 🚐 FURGONI
   if (q.includes('furgone') || q.includes('van')) {
     return (
-      codeUpper.includes('F') ||
+      codeUpper.startsWith('F') ||   // prende TUTTI i gruppi F
       nameLower.includes('furgone') ||
       nameLower.includes('van') ||
       nameLower.includes('pc') ||
@@ -688,42 +689,27 @@ function matchVehicleAgainstUserText(vehicle, userText) {
     );
   }
 
-  if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti')) {
+  // 👨‍👩‍👧‍👦 PULMINI
+  if (q.includes('pulmino') || q.includes('posti')) {
     return (
-      codeUpper.includes('P') ||
-      nameLower.includes('pulmino') ||
+      codeUpper.startsWith('P') ||
       nameLower.includes('posti') ||
-      nameLower.includes('9 posti') ||
-      nameLower.includes('8 posti')
+      nameLower.includes('pulmino')
     );
   }
 
+  // 🚗 AUTO
   if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
     return (
-      codeUpper.includes('A') ||
+      codeUpper.startsWith('A') ||
       nameLower.includes('auto') ||
       nameLower.includes('compact') ||
-      nameLower.includes('compatta') ||
-      nameLower.includes('eco') ||
-      nameLower.includes('elite')
+      nameLower.includes('eco')
     );
   }
 
   return true;
 }
-  if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
-    return (
-      nameLower.includes('auto') ||
-      nameLower.includes('compact') ||
-      nameLower.includes('compatta') ||
-      nameLower.includes('eco') ||
-      nameLower.includes('elite')
-    );
-  }
-
-  return false;
-}
-
 async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
   if (!canUseCarRental()) {
     throw new Error('Gestionale non configurato');

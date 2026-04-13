@@ -37,6 +37,7 @@ const LINK_OFFICINA =
   'https://calendly.com/contabilita-trasportidp/appuntamenti-officina-dp';
 
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
+const EXTRA_SERA_CENTS = 3000; // +30€ se il ritiro è oggi dopo le 17
 
 // =========================
 // MEMORIA
@@ -90,6 +91,271 @@ function alreadyProcessedFingerprint(from, body) {
 }
 
 // =========================
+// PREZZI
+// =========================
+const IVA_RATE = 0.22;
+const SOSTA_PRICE_PER_DAY_CENTS = parseInt(
+  process.env.SOSTA_PRICE_PER_DAY_CENTS || '2000',
+  10
+);
+const SOSTA_CORRENTE_EXTRA_CENTS = parseInt(
+  process.env.SOSTA_CORRENTE_EXTRA_CENTS || '500',
+  10
+);
+const SOSTA_ACQUA_EXTRA_CENTS = parseInt(
+  process.env.SOSTA_ACQUA_EXTRA_CENTS || '300',
+  10
+);
+
+const NOLEGGIO_PRICE_PER_DAY_EUR = parseFloat(
+  process.env.NOLEGGIO_PRICE_PER_DAY_EUR || '70'
+);
+const NOLEGGIO_KM_INCLUDED_PER_DAY = parseInt(
+  process.env.NOLEGGIO_KM_INCLUDED_PER_DAY || '150',
+  10
+);
+const NOLEGGIO_EXTRA_KM_EUR = parseFloat(
+  process.env.NOLEGGIO_EXTRA_KM_EUR || '0.15'
+);
+const NOLEGGIO_DEPOSIT_CENTS = parseInt(
+  process.env.NOLEGGIO_DEPOSIT_CENTS || '50000',
+  10
+);
+
+// =========================
+// UTILITY
+// =========================
+function cleanText(text) {
+  return (text || '').trim();
+}
+
+function normalize(text) {
+  return cleanText(text).toLowerCase();
+}
+
+function formatCustomerName(profileName) {
+  const name = cleanText(profileName);
+  return name || 'Cliente';
+}
+
+function formatWhatsappNumber(number) {
+  return cleanText(number) || '-';
+}
+
+function eurosFromCents(cents) {
+  return (Number(cents || 0) / 100).toFixed(2).replace('.', ',');
+}
+
+function formatEuroNumber(value) {
+  return Number(value || 0).toFixed(2).replace('.', ',');
+}
+
+function euroToCents(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
+function yesNoLabel(value) {
+  const msg = normalize(value);
+  if (['si', 'sì', 'yes', 'y', 'ok', 'certo'].includes(msg)) return 'SÌ';
+  if (['no', 'n'].includes(msg)) return 'NO';
+  return cleanText(value) || '-';
+}
+
+function isYes(value) {
+  return yesNoLabel(value) === 'SÌ';
+}
+
+function buildShortOrderId(prefix = 'DP') {
+  const ts = Date.now().toString().slice(-10);
+  const rnd = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, '0');
+  return `${prefix}${ts}${rnd}`.slice(0, 18);
+}
+
+function formatDateIT(dateObj) {
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function toLocalMidday(dateObj) {
+  return new Date(
+    dateObj.getFullYear(),
+    dateObj.getMonth(),
+    dateObj.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
+}
+
+function diffDaysInclusive(startDate, endDate) {
+  const ms = toLocalMidday(endDate) - toLocalMidday(startDate);
+  const days = Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
+  return days > 0 ? days : null;
+}
+
+function parseItalianDate(dayStr, monthStr, yearStr) {
+  const day = parseInt(dayStr, 10);
+  const month = parseInt(monthStr, 10);
+  let year = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
+
+  if (String(year).length === 2) year += 2000;
+  if (!day || !month || !year) return null;
+
+  const d = new Date(year, month - 1, day, 12, 0, 0, 0);
+
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== month - 1 ||
+    d.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return d;
+}
+
+function normalizeDateRangeText(text) {
+  return normalize(text)
+    .replace(/\s+/g, ' ')
+    .replace(/\bdal\b/g, '')
+    .replace(/\balla\b/g, '')
+    .replace(/\bal\b/g, '-')
+    .replace(/\ba\b/g, '-')
+    .replace(/\bto\b/g, '-')
+    .replace(/\s*-\s*/g, '-')
+    .trim();
+}
+
+function extractDateRange(text) {
+  const raw = normalizeDateRangeText(text);
+
+  const regex =
+    /(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\s*-\s*(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/;
+
+  const match = raw.match(regex);
+  if (!match) return null;
+
+  const start = parseItalianDate(match[1], match[2], match[3]);
+  let end = parseItalianDate(match[4], match[5], match[6]);
+
+  if (!start || !end) return null;
+
+  if (!match[6] && end < start) {
+    end = parseItalianDate(match[4], match[5], String(start.getFullYear() + 1));
+  }
+
+  if (!end || end < start) return null;
+
+  const days = diffDaysInclusive(start, end);
+  if (!days) return null;
+
+  return {
+    startDate: start,
+    endDate: end,
+    startLabel: formatDateIT(start),
+    endLabel: formatDateIT(end),
+    days
+  };
+}
+
+function extractKilometers(text) {
+  const raw = normalize(text).replace(/\./g, '').replace(/,/g, '.');
+  const match = raw.match(/(\d{1,6})/);
+  if (!match) return null;
+
+  const km = parseInt(match[1], 10);
+  if (!Number.isFinite(km) || km < 0) return null;
+  return km;
+}
+
+function isEveningPickup(startDate) {
+  if (!startDate) return false;
+
+  const now = new Date();
+
+  const sameDay =
+    now.getDate() === startDate.getDate() &&
+    now.getMonth() === startDate.getMonth() &&
+    now.getFullYear() === startDate.getFullYear();
+
+  if (!sameDay) return false;
+
+  return now.getHours() >= 17;
+}
+
+function computeSostaAmountCents(answers) {
+  const dateRange = extractDateRange(answers[1]);
+  const giorni = dateRange?.days || 1;
+  const corrente = isYes(answers[2]);
+  const acqua = isYes(answers[3]);
+
+  let total = giorni * SOSTA_PRICE_PER_DAY_CENTS;
+  if (corrente) total += SOSTA_CORRENTE_EXTRA_CENTS;
+  if (acqua) total += SOSTA_ACQUA_EXTRA_CENTS;
+
+  return {
+    giorni,
+    corrente,
+    acqua,
+    totalCents: total,
+    startLabel: dateRange?.startLabel || '',
+    endLabel: dateRange?.endLabel || ''
+  };
+}
+
+function computeNoleggioQuote({ startDate, endDate, requestedKm }) {
+  const days = diffDaysInclusive(startDate, endDate);
+  if (!days) return null;
+
+  const kmIncluded = NOLEGGIO_KM_INCLUDED_PER_DAY * days;
+  const extraKm = Math.max(0, Number(requestedKm || 0) - kmIncluded);
+
+  const baseTotalExVat = NOLEGGIO_PRICE_PER_DAY_EUR * days;
+  const extraKmTotalExVat = extraKm * NOLEGGIO_EXTRA_KM_EUR;
+  const totalExVat = baseTotalExVat + extraKmTotalExVat;
+  const totalIncVat = totalExVat * (1 + IVA_RATE);
+
+  const extraSeraCents = isEveningPickup(startDate) ? EXTRA_SERA_CENTS : 0;
+  const totalIncVatWithEvening = totalIncVat + extraSeraCents / 100;
+
+  return {
+    giorni: days,
+    startLabel: formatDateIT(startDate),
+    endLabel: formatDateIT(endDate),
+    startDate,
+    requestedKm: Number(requestedKm || 0),
+    kmIncluded,
+    extraKm,
+    extraKmExVat: NOLEGGIO_EXTRA_KM_EUR,
+    extraKmTotalExVat,
+    baseTotalExVat,
+    totalExVat,
+    totalIncVat,
+    extraSeraCents,
+    totalIncVatWithEvening
+  };
+}
+
+function computeNoleggioFallbackWithKm(answers) {
+  const dateRange = extractDateRange(answers[1]);
+  if (!dateRange) return null;
+
+  const requestedKm = extractKilometers(answers[2]);
+  if (requestedKm === null) return null;
+
+  return computeNoleggioQuote({
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
+    requestedKm
+  });
+}
+
+// =========================
 // NEXI
 // =========================
 const NEXI_ENV = (process.env.NEXI_ENV || 'prod').toLowerCase();
@@ -108,7 +374,12 @@ function canUseNexi() {
   return Boolean(NEXI_API_KEY_ALIAS && NEXI_MAC_KEY);
 }
 
-function generateNexiRequestMac({ apiKey, codiceTransazione, importo, timeStamp }) {
+function generateNexiRequestMac({
+  apiKey,
+  codiceTransazione,
+  importo,
+  timeStamp
+}) {
   const source =
     `apiKey=${apiKey}` +
     `codiceTransazione=${codiceTransazione}` +
@@ -129,7 +400,11 @@ function generateNexiResponseMac({ esito, idOperazione, timeStamp }) {
   return crypto.createHash('sha1').update(source).digest('hex');
 }
 
-async function createNexiPayMailLink({ amountCents, description, customerWhatsapp }) {
+async function createNexiPayMailLink({
+  amountCents,
+  description,
+  customerWhatsapp
+}) {
   const codiceTransazione = buildShortOrderId('DP');
   const timeStamp = Date.now().toString();
 
@@ -293,7 +568,9 @@ function prettifyVehicleCode(code) {
 }
 
 function humanizeVehicleName(name, code) {
-  const cleaned = String(name || '').replace(/\s+/g, ' ').trim();
+  const cleaned = String(name || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const upperCode = String(code || '').toUpperCase().trim();
 
   if (!cleaned) return prettifyVehicleCode(upperCode);
@@ -315,10 +592,7 @@ function humanizeVehicleName(name, code) {
 function normalizeVehicleLabel(item) {
   const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
   const vehicle =
-    item?.Vehicle ||
-    item?.['ns1:Vehicle'] ||
-    vehAvailCore?.Vehicle ||
-    {};
+    item?.Vehicle || item?.['ns1:Vehicle'] || vehAvailCore?.Vehicle || {};
   const makeModel =
     item?.VehMakeModel ||
     item?.['ns1:VehMakeModel'] ||
@@ -346,24 +620,10 @@ function normalizeVehicleLabel(item) {
 
   name = humanizeVehicleName(name, code);
 
-  const totalCharge =
-    item?.TotalCharge ||
-    item?.['ns1:TotalCharge'] ||
-    vehAvailCore?.TotalCharge ||
-    findFirstByKeys(item, ['TotalCharge', 'ns1:TotalCharge']) ||
-    {};
-
-  const estimatedTotalAmount =
-    totalCharge?.['@_EstimatedTotalAmount'] ||
-    totalCharge?.EstimatedTotalAmount ||
-    totalCharge?.['@_RateTotalAmount'] ||
-    totalCharge?.RateTotalAmount ||
-    null;
-
   return {
     code: String(code || '').trim(),
     name: String(name || '').trim(),
-    estimatedTotalAmount: estimatedTotalAmount !== null ? Number(estimatedTotalAmount) : null,
+    estimatedTotalAmount: null,
     raw: item
   };
 }
@@ -492,223 +752,16 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
     throw new Error(JSON.stringify(errors));
   }
 
-  const vehAvailsRaw = findFirstByKeys(availRs, ['VehAvail', 'ns1:VehAvail']) || [];
+  const vehAvailsRaw =
+    findFirstByKeys(availRs, ['VehAvail', 'ns1:VehAvail']) || [];
   const vehicles = safeArray(vehAvailsRaw).map(normalizeVehicleLabel);
-  const filtered = vehicles.filter((v) => matchVehicleAgainstUserText(v, vehicleText));
-  const usable = (filtered.length ? filtered : vehicles).filter(
-    (v) => v.estimatedTotalAmount !== null
+  const filtered = vehicles.filter((v) =>
+    matchVehicleAgainstUserText(v, vehicleText)
   );
-
-  usable.sort((a, b) => a.estimatedTotalAmount - b.estimatedTotalAmount);
 
   return {
     rawXml: xmlText,
-    vehicles: usable
-  };
-}
-
-// =========================
-// PREZZI
-// =========================
-const IVA_RATE = 0.22;
-const SOSTA_PRICE_PER_DAY_CENTS = parseInt(process.env.SOSTA_PRICE_PER_DAY_CENTS || '2000', 10);
-const SOSTA_CORRENTE_EXTRA_CENTS = parseInt(process.env.SOSTA_CORRENTE_EXTRA_CENTS || '500', 10);
-const SOSTA_ACQUA_EXTRA_CENTS = parseInt(process.env.SOSTA_ACQUA_EXTRA_CENTS || '300', 10);
-
-const NOLEGGIO_PRICE_PER_DAY_EUR = parseFloat(process.env.NOLEGGIO_PRICE_PER_DAY_EUR || '70');
-const NOLEGGIO_KM_INCLUDED_PER_DAY = parseInt(process.env.NOLEGGIO_KM_INCLUDED_PER_DAY || '150', 10);
-const NOLEGGIO_EXTRA_KM_EUR = parseFloat(process.env.NOLEGGIO_EXTRA_KM_EUR || '0.15');
-const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '50000', 10);
-
-// =========================
-// UTILITY
-// =========================
-function cleanText(text) {
-  return (text || '').trim();
-}
-
-function normalize(text) {
-  return cleanText(text).toLowerCase();
-}
-
-function formatCustomerName(profileName) {
-  const name = cleanText(profileName);
-  return name || 'Cliente';
-}
-
-function formatWhatsappNumber(number) {
-  return cleanText(number) || '-';
-}
-
-function eurosFromCents(cents) {
-  return (Number(cents || 0) / 100).toFixed(2).replace('.', ',');
-}
-
-function formatEuroNumber(value) {
-  return Number(value || 0).toFixed(2).replace('.', ',');
-}
-
-function euroToCents(value) {
-  return Math.round(Number(value || 0) * 100);
-}
-
-function yesNoLabel(value) {
-  const msg = normalize(value);
-  if (['si', 'sì', 'yes', 'y', 'ok', 'certo'].includes(msg)) return 'SÌ';
-  if (['no', 'n'].includes(msg)) return 'NO';
-  return cleanText(value) || '-';
-}
-
-function isYes(value) {
-  return yesNoLabel(value) === 'SÌ';
-}
-
-function buildShortOrderId(prefix = 'DP') {
-  const ts = Date.now().toString().slice(-10);
-  const rnd = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `${prefix}${ts}${rnd}`.slice(0, 18);
-}
-
-function formatDateIT(dateObj) {
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const year = dateObj.getFullYear();
-  return `${day}/${month}/${year}`;
-}
-
-function toLocalMidday(dateObj) {
-  return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 12, 0, 0, 0);
-}
-
-function diffDaysInclusive(startDate, endDate) {
-  const ms = toLocalMidday(endDate) - toLocalMidday(startDate);
-  const days = Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
-  return days > 0 ? days : null;
-}
-
-function parseItalianDate(dayStr, monthStr, yearStr) {
-  const day = parseInt(dayStr, 10);
-  const month = parseInt(monthStr, 10);
-  let year = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
-
-  if (String(year).length === 2) year += 2000;
-  if (!day || !month || !year) return null;
-
-  const d = new Date(year, month - 1, day, 12, 0, 0, 0);
-
-  if (
-    d.getFullYear() !== year ||
-    d.getMonth() !== month - 1 ||
-    d.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return d;
-}
-
-function normalizeDateRangeText(text) {
-  return normalize(text)
-    .replace(/\s+/g, ' ')
-    .replace(/\bdal\b/g, '')
-    .replace(/\balla\b/g, '')
-    .replace(/\bal\b/g, '-')
-    .replace(/\ba\b/g, '-')
-    .replace(/\bto\b/g, '-')
-    .replace(/\s*-\s*/g, '-')
-    .trim();
-}
-
-function extractDateRange(text) {
-  const raw = normalizeDateRangeText(text);
-
-  const regex =
-    /(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\s*-\s*(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/;
-
-  const match = raw.match(regex);
-  if (!match) return null;
-
-  const start = parseItalianDate(match[1], match[2], match[3]);
-  let end = parseItalianDate(match[4], match[5], match[6]);
-
-  if (!start || !end) return null;
-
-  if (!match[6] && end < start) {
-    end = parseItalianDate(match[4], match[5], String(start.getFullYear() + 1));
-  }
-
-  if (!end || end < start) return null;
-
-  const days = diffDaysInclusive(start, end);
-  if (!days) return null;
-
-  return {
-    startDate: start,
-    endDate: end,
-    startLabel: formatDateIT(start),
-    endLabel: formatDateIT(end),
-    days
-  };
-}
-
-function extractKilometers(text) {
-  const raw = normalize(text).replace(/\./g, '').replace(/,/g, '.');
-  const match = raw.match(/(\d{1,6})/);
-  if (!match) return null;
-
-  const km = parseInt(match[1], 10);
-  if (!Number.isFinite(km) || km < 0) return null;
-  return km;
-}
-
-function computeSostaAmountCents(answers) {
-  const dateRange = extractDateRange(answers[1]);
-  const giorni = dateRange?.days || 1;
-  const corrente = isYes(answers[2]);
-  const acqua = isYes(answers[3]);
-
-  let total = giorni * SOSTA_PRICE_PER_DAY_CENTS;
-  if (corrente) total += SOSTA_CORRENTE_EXTRA_CENTS;
-  if (acqua) total += SOSTA_ACQUA_EXTRA_CENTS;
-
-  return {
-    giorni,
-    corrente,
-    acqua,
-    totalCents: total,
-    startLabel: dateRange?.startLabel || '',
-    endLabel: dateRange?.endLabel || ''
-  };
-}
-
-function computeNoleggioFallbackWithKm(answers) {
-  const dateRange = extractDateRange(answers[1]);
-  if (!dateRange) return null;
-
-  const requestedKm = extractKilometers(answers[2]);
-  if (requestedKm === null) return null;
-
-  const giorni = dateRange.days;
-  const kmIncluded = NOLEGGIO_KM_INCLUDED_PER_DAY * giorni;
-  const extraKm = Math.max(0, requestedKm - kmIncluded);
-
-  const baseTotalExVat = NOLEGGIO_PRICE_PER_DAY_EUR * giorni;
-  const extraKmTotalExVat = extraKm * NOLEGGIO_EXTRA_KM_EUR;
-  const totalExVat = baseTotalExVat + extraKmTotalExVat;
-  const totalIncVat = totalExVat * (1 + IVA_RATE);
-
-  return {
-    giorni,
-    startLabel: dateRange.startLabel,
-    endLabel: dateRange.endLabel,
-    requestedKm,
-    kmIncluded,
-    extraKm,
-    extraKmExVat: NOLEGGIO_EXTRA_KM_EUR,
-    extraKmTotalExVat,
-    baseTotalExVat,
-    totalExVat,
-    totalIncVat
+    vehicles: filtered.length ? filtered : vehicles
   };
 }
 
@@ -837,8 +890,10 @@ function intentFromMenuChoice(text) {
   if (msg === '2' || msg === 'noleggio') return 'noleggio';
   if (msg === '3' || msg === 'vendita') return 'vendita';
   if (msg === '4' || msg === 'trasporto') return 'trasporto';
-  if (msg === '5' || msg === 'responsabile' || msg === 'contatto diretto') return 'contatto_diretto';
-  if (msg === '6' || msg === 'parcheggio' || msg === 'sosta') return 'parcheggio_sosta';
+  if (msg === '5' || msg === 'responsabile' || msg === 'contatto diretto')
+    return 'contatto_diretto';
+  if (msg === '6' || msg === 'parcheggio' || msg === 'sosta')
+    return 'parcheggio_sosta';
 
   return null;
 }
@@ -982,7 +1037,14 @@ function buildServiceChangedMessage(intent, profileName) {
   );
 }
 
-function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, requestedKm, vehicles) {
+function buildVehicleChoiceMessage(
+  profileName,
+  requestedVehicle,
+  dateRange,
+  requestedKm,
+  vehicles,
+  extraSera = false
+) {
   const customerName = formatCustomerName(profileName);
 
   const lines = vehicles.slice(0, 3).map((v, i) => {
@@ -995,10 +1057,14 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, req
     return `${i + 1}️⃣ *${label}*\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
   });
 
+  const extraText = extraSera
+    ? '\n🌙 *Ritiro serale oggi:* +30€ già compresi nei prezzi.'
+    : '';
+
   return (
     `Perfetto ${customerName} 👌\n\n` +
     `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n` +
-    `🚗 *Km richiesti:* ${requestedKm} km\n\n` +
+    `🚗 *Km richiesti:* ${requestedKm} km${extraText}\n\n` +
     `${lines.join('\n\n')}\n\n` +
     'I mezzi visualizzati sono le *categorie disponibili* del gestionale.\n\n' +
     'Scrivimi *1*, *2* oppure *3* per scegliere quello che preferisci.\n' +
@@ -1038,13 +1104,17 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     }
 
     if (extra.fromCarRental) {
+      const extraText = extra.extraSera
+        ? '\n🌙 *Ritiro serale:* +30€'
+        : '';
+
       return (
         `Grazie ${customerName} ✅\n\n` +
-        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
+        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n` +
         `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
         `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
         `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
-        `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}\n\n` +
+        `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
         `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
         `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
       );
@@ -1062,12 +1132,21 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
           `\n📍 *Extra km:* ${extra.extraKm} km`
         : '';
 
+    const extraText =
+      extra.extraSeraCents && extra.extraSeraCents > 0
+        ? `\n🌙 *Ritiro serale:* +€ ${formatEuroNumber(extra.extraSeraCents / 100)}`
+        : '';
+
     const pricePart =
       extra.totalExVat !== undefined
         ? `\n\n💰 *Costo noleggio base:* € ${formatEuroNumber(extra.baseTotalExVat)} + IVA 22%` +
           `\n💰 *Costo extra km:* € ${formatEuroNumber(extra.extraKmTotalExVat || 0)} + IVA 22%` +
           `\n💰 *Totale imponibile:* € ${formatEuroNumber(extra.totalExVat)}` +
-          `\n💰 *Totale con IVA:* € ${formatEuroNumber(extra.totalIncVat)}` +
+          `\n💰 *Totale con IVA:* € ${formatEuroNumber(
+            extra.totalIncVatWithEvening !== undefined
+              ? extra.totalIncVatWithEvening
+              : extra.totalIncVat
+          )}${extraText}` +
           `\n📍 *Tariffa extra km:* € ${formatEuroNumber(extra.extraKmExVat)} + IVA 22% / km`
         : '';
 
@@ -1226,7 +1305,13 @@ async function notifyPrices(profileName, incomingFrom, data) {
     `📞 ${incomingFrom}\n\n` +
     `🚐 Mezzo richiesto: ${data.requestedVehicle}\n` +
     `📅 Periodo: ${data.startLabel} - ${data.endLabel}\n` +
-    `🚗 Km richiesti: ${data.requestedKm} km\n\n`;
+    `🚗 Km richiesti: ${data.requestedKm} km\n`;
+
+  if (data.extraSera) {
+    text += '🌙 Ritiro serale oggi: +30€ già compresi nei prezzi\n';
+  }
+
+  text += '\n';
 
   data.vehicles.forEach((v, i) => {
     text += `${i + 1}) ${v.name}${v.code ? ` (${v.code})` : ''} - € ${formatEuroNumber(v.estimatedTotalAmount)}\n`;
@@ -1539,7 +1624,11 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (alreadyProcessedFingerprint(incomingFrom, incomingText)) {
-      console.log('Messaggio duplicato ignorato da fingerprint:', incomingFrom, incomingText);
+      console.log(
+        'Messaggio duplicato ignorato da fingerprint:',
+        incomingFrom,
+        incomingText
+      );
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(new twilio.twiml.MessagingResponse().toString());
     }
@@ -1582,7 +1671,8 @@ app.post('/whatsapp', async (req, res) => {
         session.createdAt = Date.now();
 
         twiml.message(
-          'Va bene 👍\n\nMandami pure le date del noleggio.\n\n' + session.questions[1]
+          'Va bene 👍\n\nMandami pure le date del noleggio.\n\n' +
+            session.questions[1]
         );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -1617,7 +1707,8 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (session.state === 'idle') {
-      const directIntent = intentFromMenuChoice(incomingText) || detectIntent(incomingText);
+      const directIntent =
+        intentFromMenuChoice(incomingText) || detectIntent(incomingText);
 
       if (directIntent && directIntent !== 'generico') {
         setSessionIntent(session, directIntent);
@@ -1637,7 +1728,8 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (session.state === 'menu') {
-      const chosenIntent = intentFromMenuChoice(incomingText) || detectIntent(incomingText);
+      const chosenIntent =
+        intentFromMenuChoice(incomingText) || detectIntent(incomingText);
 
       if (!chosenIntent || chosenIntent === 'generico') {
         twiml.message(buildInvalidChoiceMessage());
@@ -1686,7 +1778,8 @@ app.post('/whatsapp', async (req, res) => {
         endLabel: session.pendingOptions.endLabel,
         days: session.pendingOptions.days,
         requestedKm: session.pendingOptions.requestedKm || 0,
-        estimatedTotalAmount: selected.estimatedTotalAmount
+        estimatedTotalAmount: selected.estimatedTotalAmount,
+        extraSera: session.pendingOptions.extraSera || false
       };
 
       if (canUseNexi() && selected.estimatedTotalAmount !== null) {
@@ -1782,7 +1875,11 @@ app.post('/whatsapp', async (req, res) => {
           }
         }
 
-        confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName,
+          internalExtra
+        );
 
         const internalMessage = buildInternalMessage(
           session,
@@ -1809,8 +1906,7 @@ app.post('/whatsapp', async (req, res) => {
               JSON.stringify(
                 avail.vehicles.map((v) => ({
                   code: v.code,
-                  name: v.name,
-                  estimatedTotalAmount: v.estimatedTotalAmount
+                  name: v.name
                 })),
                 null,
                 2
@@ -1818,14 +1914,26 @@ app.post('/whatsapp', async (req, res) => {
             );
 
             if (avail.vehicles.length > 0) {
-              const topVehicles = avail.vehicles.slice(0, 3);
+              const quote = computeNoleggioQuote({
+                startDate: dateRange.startDate,
+                endDate: dateRange.endDate,
+                requestedKm
+              });
+
+              const extraSera = quote?.extraSeraCents > 0;
+
+              const topVehicles = avail.vehicles.slice(0, 3).map((v) => ({
+                ...v,
+                estimatedTotalAmount: quote.totalIncVatWithEvening
+              }));
 
               await notifyPrices(profileName, incomingFrom, {
                 requestedVehicle,
                 startLabel: dateRange.startLabel,
                 endLabel: dateRange.endLabel,
                 requestedKm,
-                vehicles: topVehicles
+                vehicles: topVehicles,
+                extraSera
               });
 
               session.state = 'vehicle_choice';
@@ -1833,8 +1941,10 @@ app.post('/whatsapp', async (req, res) => {
                 requestedVehicle,
                 startLabel: dateRange.startLabel,
                 endLabel: dateRange.endLabel,
+                startDate: dateRange.startDate,
                 days: dateRange.days,
                 requestedKm,
+                extraSera,
                 vehicles: topVehicles
               };
 
@@ -1844,7 +1954,8 @@ app.post('/whatsapp', async (req, res) => {
                   requestedVehicle,
                   dateRange,
                   requestedKm,
-                  topVehicles
+                  topVehicles,
+                  extraSera
                 )
               );
               res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1858,7 +1969,11 @@ app.post('/whatsapp', async (req, res) => {
               endLabel: dateRange.endLabel
             };
 
-            confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              internalExtra
+            );
 
             session.state = 'questions';
             session.questionIndex = 1;
@@ -1884,7 +1999,11 @@ app.post('/whatsapp', async (req, res) => {
                 endLabel: dateRange.endLabel
               };
 
-              confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+              confirmationMessage = buildCustomerConfirmation(
+                session.intent,
+                profileName,
+                internalExtra
+              );
 
               session.state = 'questions';
               session.questionIndex = 1;
@@ -1910,13 +2029,15 @@ app.post('/whatsapp', async (req, res) => {
                 extraKmTotalExVat: fallback.extraKmTotalExVat,
                 baseTotalExVat: fallback.baseTotalExVat,
                 totalExVat: fallback.totalExVat,
-                totalIncVat: fallback.totalIncVat
+                totalIncVat: fallback.totalIncVat,
+                extraSeraCents: fallback.extraSeraCents,
+                totalIncVatWithEvening: fallback.totalIncVatWithEvening
               };
 
               if (canUseNexi()) {
                 try {
                   const payment = await createNexiPayMailLink({
-                    amountCents: euroToCents(fallback.totalIncVat),
+                    amountCents: euroToCents(fallback.totalIncVatWithEvening),
                     description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
                     customerWhatsapp: formatWhatsappNumber(incomingFrom)
                   });
@@ -1927,7 +2048,11 @@ app.post('/whatsapp', async (req, res) => {
               }
             }
 
-            confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+            confirmationMessage = buildCustomerConfirmation(
+              session.intent,
+              profileName,
+              internalExtra
+            );
           }
         } else {
           const fallback = computeNoleggioFallbackWithKm(session.answers);
@@ -1944,13 +2069,15 @@ app.post('/whatsapp', async (req, res) => {
               extraKmTotalExVat: fallback.extraKmTotalExVat,
               baseTotalExVat: fallback.baseTotalExVat,
               totalExVat: fallback.totalExVat,
-              totalIncVat: fallback.totalIncVat
+              totalIncVat: fallback.totalIncVat,
+              extraSeraCents: fallback.extraSeraCents,
+              totalIncVatWithEvening: fallback.totalIncVatWithEvening
             };
 
             if (canUseNexi()) {
               try {
                 const payment = await createNexiPayMailLink({
-                  amountCents: euroToCents(fallback.totalIncVat),
+                  amountCents: euroToCents(fallback.totalIncVatWithEvening),
                   description: `Pagamento noleggio ${requestedVehicle} - ${fallback.giorni} giorni`,
                   customerWhatsapp: formatWhatsappNumber(incomingFrom)
                 });
@@ -1961,7 +2088,11 @@ app.post('/whatsapp', async (req, res) => {
             }
           }
 
-          confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+          confirmationMessage = buildCustomerConfirmation(
+            session.intent,
+            profileName,
+            internalExtra
+          );
         }
       } else {
         confirmationMessage = buildCustomerConfirmation(session.intent, profileName);

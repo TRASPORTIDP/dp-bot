@@ -672,20 +672,25 @@ function getRequestedVehicleCodes(userText) {
 }
 
 function matchVehicleAgainstUserText(vehicle, userText) {
-  const requestedCodes = getRequestedVehicleCodes(userText);
   const codeUpper = String(vehicle.code || '').toUpperCase();
   const nameLower = String(vehicle.name || '').toLowerCase();
   const q = normalize(userText);
 
-  if (!requestedCodes.length) return true;
-  if (requestedCodes.some((c) => codeUpper.includes(c))) return true;
-
-  if (q.includes('furgone')) {
-    return nameLower.includes('furgone') || nameLower.includes('van');
+  if (q.includes('furgone') || q.includes('van')) {
+    return (
+      codeUpper.includes('F') ||
+      nameLower.includes('furgone') ||
+      nameLower.includes('van') ||
+      nameLower.includes('pc') ||
+      nameLower.includes('corto') ||
+      nameLower.includes('lungo') ||
+      nameLower.includes('cargo')
+    );
   }
 
   if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti')) {
     return (
+      codeUpper.includes('P') ||
       nameLower.includes('pulmino') ||
       nameLower.includes('posti') ||
       nameLower.includes('9 posti') ||
@@ -693,6 +698,19 @@ function matchVehicleAgainstUserText(vehicle, userText) {
     );
   }
 
+  if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
+    return (
+      codeUpper.includes('A') ||
+      nameLower.includes('auto') ||
+      nameLower.includes('compact') ||
+      nameLower.includes('compatta') ||
+      nameLower.includes('eco') ||
+      nameLower.includes('elite')
+    );
+  }
+
+  return true;
+}
   if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) {
     return (
       nameLower.includes('auto') ||

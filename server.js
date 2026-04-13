@@ -1279,7 +1279,8 @@ async function sendInternalNotification(numbers, text) {
       console.error('MORE INFO:', error.moreInfo);
     }
   }
-}async function notifyPaymentSuccess(data) {
+}
+  async function notifyPaymentSuccess(data) {
   const text =
     `✅ PAGAMENTO RICEVUTO\n\n` +
     `👤 ${data.customerName}\n` +

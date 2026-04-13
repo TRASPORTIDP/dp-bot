@@ -39,12 +39,15 @@ const LINK_OFFICINA =
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
 
 // =========================
-// SESSIONI / MEMORIA
+// MEMORIA
 // =========================
 const sessions = {};
 const processedMessageSids = new Map();
-const transactions = {}; // usato per collegare ordine Nexi -> cliente
+const transactions = {};
 
+// =========================
+// DEDUPLICA MESSAGGI
+// =========================
 function rememberProcessedMessage(messageSid) {
   if (!messageSid) return;
   processedMessageSids.set(messageSid, Date.now());
@@ -106,9 +109,8 @@ async function createNexiPayMailLink({ amountCents, description, customerWhatsap
   const codiceTransazione = buildShortOrderId('DP');
   const timeStamp = Date.now().toString();
 
-  // IMPORTANTE:
-  // niente urlpost qui, perché nel tuo ambiente PayMail viene rifiutato.
-  // La callback server è pronta sotto /nexi-callback e /nexi/notify.
+  // NIENTE urlpost QUI:
+  // nel tuo ambiente PayMail lo rifiuta
   const payload = {
     apiKey: NEXI_API_KEY_ALIAS,
     codiceTransazione,
@@ -242,27 +244,6 @@ function findFirstByKeys(obj, keys) {
   return null;
 }
 
-function prettifyVehicleCode(code) {
-  const c = String(code || '').toUpperCase().trim();
-
-  if (c === 'F1-VAN') return 'Gruppo F1 - Furgone';
-  if (c === 'F2-PC') return 'Gruppo F2 - Furgone commerciale';
-  if (c === 'P2-9P') return 'Gruppo P2 - 9 Posti';
-  if (c === 'P1-8P') return 'Gruppo P1 - 8 Posti';
-  if (c === 'A1' || c === 'A1 - COMPACT ECO' || c === 'A1-COMPACT ECO') {
-    return 'Gruppo A1 - Compact Eco';
-  }
-  if (c === 'A2' || c === 'A2 - COMPACT' || c === 'A2-COMPACT') {
-    return 'Gruppo A2 - Compact';
-  }
-  if (c === 'A3' || c === 'A3 - COMPACT ELITE' || c === 'A3-COMPACT ELITE') {
-    return 'Gruppo A3 - Compact Elite';
-  }
-  if (c === 'X-ESC') return 'Gruppo X - Mezzo speciale';
-
-  return c || '';
-}
-
 function sanitizeVehicleCode(code) {
   return String(code || '')
     .replace(/\s+/g, ' ')
@@ -271,10 +252,24 @@ function sanitizeVehicleCode(code) {
     .trim();
 }
 
+function prettifyVehicleCode(code) {
+  const c = String(code || '').toUpperCase().trim();
+
+  if (c === 'F1-VAN') return 'Gruppo F1 - Furgone';
+  if (c === 'F2-PC') return 'Gruppo F2 - Furgone commerciale';
+  if (c === 'P2-9P') return 'Gruppo P2 - 9 Posti';
+  if (c === 'P1-8P') return 'Gruppo P1 - 8 Posti';
+  if (c === 'A1' || c === 'A1-COMPACT ECO' || c === 'A1 - COMPACT ECO') return 'Gruppo A1 - Compact Eco';
+  if (c === 'A2' || c === 'A2-COMPACT' || c === 'A2 - COMPACT') return 'Gruppo A2 - Compact';
+  if (c === 'A3' || c === 'A3-COMPACT ELITE' || c === 'A3 - COMPACT ELITE') return 'Gruppo A3 - Compact Elite';
+  if (c === 'X-ESC') return 'Gruppo X - Mezzo speciale';
+
+  return c || '';
+}
+
 function humanizeVehicleName(name, code) {
   const cleaned = String(name || '').replace(/\s+/g, ' ').trim();
-  const cleanCode = sanitizeVehicleCode(code);
-  const upperCode = cleanCode.toUpperCase();
+  const upperCode = String(code || '').toUpperCase().trim();
 
   if (!cleaned) return prettifyVehicleCode(upperCode) || 'Veicolo disponibile';
 
@@ -357,7 +352,7 @@ function getRequestedVehicleCodes(userText) {
 
   if (!q) return [];
 
-  if (q.includes('pulmino') || q.includes('9 posti')) {
+  if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti')) {
     return ['P2-9P', 'P1-8P'];
   }
 
@@ -385,7 +380,7 @@ function matchVehicleAgainstUserText(vehicle, userText) {
     return nameLower.includes('furgone') || nameLower.includes('van');
   }
 
-  if (q.includes('pulmino') || q.includes('9 posti')) {
+  if (q.includes('pulmino') || q.includes('9 posti') || q.includes('8 posti')) {
     return (
       nameLower.includes('pulmino') ||
       nameLower.includes('posti') ||
@@ -914,7 +909,7 @@ function buildStartMessageByIntent(intent, profileName) {
   }
 
   if (intent === 'noleggio') {
-    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Noleggio*.\nDimmi mezzo, date e km previsti, così controllo subito disponibilità e prezzo.`;
+    return `Perfetto ${customerName} 👌\n\nTi aiuto con il *Noleggio*.\nDimmi il mezzo, le date e i km previsti così controllo disponibilità e prezzo.`;
   }
 
   if (intent === 'vendita') {
@@ -1467,7 +1462,26 @@ app.get('/', (req, res) => {
   res.send('Server WhatsApp DP attivo ✅');
 });
 
-app.get('/nexi/result', (req, res) => {
+app.get('/nexi/result', async (req, res) => {
+  try {
+    const codiceTransazione =
+      req.query.codiceTransazione ||
+      req.query.codTrans ||
+      req.query.orderId ||
+      '';
+
+    if (codiceTransazione && transactions[codiceTransazione]) {
+      const tx = transactions[codiceTransazione];
+
+      if (!tx.notifiedSuccessPage) {
+        tx.notifiedSuccessPage = true;
+        await notifyPaymentSuccess(tx);
+      }
+    }
+  } catch (error) {
+    console.error('Errore pagina success Nexi:', error.message);
+  }
+
   res.send(`
     <html>
       <head><meta charset="utf-8" /><title>Pagamento completato</title></head>
@@ -1492,44 +1506,12 @@ app.get('/nexi/cancel', (req, res) => {
   `);
 });
 
-// callback pronta per quando colleghi Nexi domani
-app.post('/nexi-callback', async (req, res) => {
-  try {
-    console.log('NEXI CALLBACK BODY:', JSON.stringify(req.body, null, 2));
-
-    const body = req.body || {};
-    const codiceTransazione =
-      body.codiceTransazione ||
-      body.orderId ||
-      body.codTrans ||
-      body.codice ||
-      body.transactionId ||
-      '';
-    const esito =
-      body.esito ||
-      body.outcome ||
-      body.status ||
-      body.result ||
-      '';
-
-    if (String(esito).toUpperCase() === 'OK' && transactions[codiceTransazione]) {
-      await notifyPaymentSuccess(transactions[codiceTransazione]);
-      delete transactions[codiceTransazione];
-    }
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error('Errore Nexi callback:', error);
-    res.sendStatus(500);
-  }
-});
-
-// alias comodo
 app.post('/nexi/notify', async (req, res) => {
   try {
-    console.log('NEXI NOTIFY BODY:', JSON.stringify(req.body, null, 2));
-
     const body = req.body || {};
+
+    console.log('NEXI NOTIFY BODY:', JSON.stringify(body, null, 2));
+
     const codiceTransazione =
       body.codiceTransazione ||
       body.orderId ||
@@ -1537,6 +1519,7 @@ app.post('/nexi/notify', async (req, res) => {
       body.codice ||
       body.transactionId ||
       '';
+
     const esito =
       body.esito ||
       body.outcome ||
@@ -1545,8 +1528,12 @@ app.post('/nexi/notify', async (req, res) => {
       '';
 
     if (String(esito).toUpperCase() === 'OK' && transactions[codiceTransazione]) {
-      await notifyPaymentSuccess(transactions[codiceTransazione]);
-      delete transactions[codiceTransazione];
+      const tx = transactions[codiceTransazione];
+
+      if (!tx.notifiedServerCallback) {
+        tx.notifiedServerCallback = true;
+        await notifyPaymentSuccess(tx);
+      }
     }
 
     res.sendStatus(200);
@@ -1712,8 +1699,8 @@ app.post('/whatsapp', async (req, res) => {
         setSessionIntent(session, directIntent);
         twiml.message(
           buildStartMessageByIntent(directIntent, profileName) +
-          '\n\n' +
-          session.questions[0]
+            '\n\n' +
+            session.questions[0]
         );
       } else {
         session.state = 'menu';
@@ -1738,8 +1725,8 @@ app.post('/whatsapp', async (req, res) => {
       setSessionIntent(session, chosenIntent);
       twiml.message(
         buildStartMessageByIntent(chosenIntent, profileName) +
-        '\n\n' +
-        session.questions[0]
+          '\n\n' +
+          session.questions[0]
       );
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1761,8 +1748,8 @@ app.post('/whatsapp', async (req, res) => {
       if (!selected) {
         twiml.message(
           'Scelta non valida 😊\n\n' +
-          'Scrivimi *1*, *2* oppure *3*.\n' +
-          'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+            'Scrivimi *1*, *2* oppure *3*.\n' +
+            'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
         );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -1883,7 +1870,11 @@ app.post('/whatsapp', async (req, res) => {
           }
         }
 
-        confirmationMessage = buildCustomerConfirmation(session.intent, profileName, internalExtra);
+        confirmationMessage = buildCustomerConfirmation(
+          session.intent,
+          profileName,
+          internalExtra
+        );
 
         const internalMessage = buildInternalMessage(
           session,

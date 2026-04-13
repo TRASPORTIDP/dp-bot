@@ -1253,7 +1253,7 @@ async function notifyPrices(profileName, incomingFrom, data) {
     text += `${i + 1}) ${v.name}${v.code ? ` (${v.code})` : ''} - € ${formatEuroNumber(v.estimatedTotalAmount)}\n`;
   });
 await sendInternalNotification(GENERAL_NUMBERS, text);
-}async function sendInternalNotification(numbers, text) {
+async function sendInternalNotification(numbers, text) {
   for (const to of numbers) {
     if (to === TWILIO_WHATSAPP_NUMBER) continue;
 
@@ -1279,8 +1279,7 @@ await sendInternalNotification(GENERAL_NUMBERS, text);
       console.error('MORE INFO:', error.moreInfo);
     }
   }
-}
-async function notifyPaymentSuccess(data) {
+}async function notifyPaymentSuccess(data) {
   const text =
     `✅ PAGAMENTO RICEVUTO\n\n` +
     `👤 ${data.customerName}\n` +

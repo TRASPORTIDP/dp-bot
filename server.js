@@ -43,6 +43,7 @@ const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/+$/, '');
 // =========================
 const sessions = {};
 const processedMessageSids = new Map();
+const processedMessageFingerprints = new Map();
 const transactions = {};
 
 // =========================
@@ -63,6 +64,27 @@ function rememberProcessedMessage(messageSid) {
 function alreadyProcessedMessage(messageSid) {
   if (!messageSid) return false;
   return processedMessageSids.has(messageSid);
+}
+
+function buildMessageFingerprint(from, body) {
+  return `${String(from || '').trim().toLowerCase()}|${String(body || '').trim().toLowerCase()}`;
+}
+
+function rememberProcessedFingerprint(from, body) {
+  const key = buildMessageFingerprint(from, body);
+  processedMessageFingerprints.set(key, Date.now());
+
+  const now = Date.now();
+  for (const [fp, ts] of processedMessageFingerprints.entries()) {
+    if (now - ts > 8000) {
+      processedMessageFingerprints.delete(fp);
+    }
+  }
+}
+
+function alreadyProcessedFingerprint(from, body) {
+  const key = buildMessageFingerprint(from, body);
+  return processedMessageFingerprints.has(key);
 }
 
 // =========================
@@ -109,8 +131,6 @@ async function createNexiPayMailLink({ amountCents, description, customerWhatsap
   const codiceTransazione = buildShortOrderId('DP');
   const timeStamp = Date.now().toString();
 
-  // NIENTE urlpost QUI:
-  // nel tuo ambiente PayMail lo rifiuta
   const payload = {
     apiKey: NEXI_API_KEY_ALIAS,
     codiceTransazione,
@@ -259,9 +279,15 @@ function prettifyVehicleCode(code) {
   if (c === 'F2-PC') return 'Gruppo F2 - Furgone commerciale';
   if (c === 'P2-9P') return 'Gruppo P2 - 9 Posti';
   if (c === 'P1-8P') return 'Gruppo P1 - 8 Posti';
-  if (c === 'A1' || c === 'A1-COMPACT ECO' || c === 'A1 - COMPACT ECO') return 'Gruppo A1 - Compact Eco';
-  if (c === 'A2' || c === 'A2-COMPACT' || c === 'A2 - COMPACT') return 'Gruppo A2 - Compact';
-  if (c === 'A3' || c === 'A3-COMPACT ELITE' || c === 'A3 - COMPACT ELITE') return 'Gruppo A3 - Compact Elite';
+  if (c === 'A1' || c === 'A1-COMPACT ECO' || c === 'A1 - COMPACT ECO') {
+    return 'Gruppo A1 - Compact Eco';
+  }
+  if (c === 'A2' || c === 'A2-COMPACT' || c === 'A2 - COMPACT') {
+    return 'Gruppo A2 - Compact';
+  }
+  if (c === 'A3' || c === 'A3-COMPACT ELITE' || c === 'A3 - COMPACT ELITE') {
+    return 'Gruppo A3 - Compact Elite';
+  }
   if (c === 'X-ESC') return 'Gruppo X - Mezzo speciale';
 
   return c || '';
@@ -513,10 +539,6 @@ const NOLEGGIO_DEPOSIT_CENTS = parseInt(process.env.NOLEGGIO_DEPOSIT_CENTS || '5
 // =========================
 function cleanText(text) {
   return (text || '').trim();
-}
-
-function normalize(text) {
-  return cleanText(text).toLowerCase();
 }
 
 function formatCustomerName(profileName) {
@@ -1008,7 +1030,12 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, req
   const customerName = formatCustomerName(profileName);
 
   const lines = vehicles.slice(0, 3).map((v, i) => {
-    const label = v.code ? `${v.name} (${v.code})` : v.name;
+    let label = v.name || 'Veicolo disponibile';
+
+    if (v.code && !label.toLowerCase().includes(v.code.toLowerCase())) {
+      label += ` (${v.code})`;
+    }
+
     return `${i + 1}️⃣ *${label}*\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
   });
 
@@ -1017,8 +1044,9 @@ function buildVehicleChoiceMessage(profileName, requestedVehicle, dateRange, req
     `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n` +
     `🚗 *Km richiesti:* ${requestedKm} km\n\n` +
     `${lines.join('\n\n')}\n\n` +
-    'Scrivimi *1*, *2* oppure *3* per scegliere il mezzo che preferisci.\n' +
-    'Se hai sbagliato, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+    'I mezzi visualizzati sono le *categorie disponibili* del gestionale.\n\n' +
+    'Scrivimi *1*, *2* oppure *3* per scegliere quello che preferisci.\n' +
+    'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
   );
 }
 
@@ -1593,12 +1621,19 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (alreadyProcessedMessage(messageSid)) {
-      console.log('Messaggio duplicato ignorato:', messageSid);
+      console.log('Messaggio duplicato ignorato da SID:', messageSid);
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(new twilio.twiml.MessagingResponse().toString());
+    }
+
+    if (alreadyProcessedFingerprint(incomingFrom, incomingText)) {
+      console.log('Messaggio duplicato ignorato da fingerprint:', incomingFrom, incomingText);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(new twilio.twiml.MessagingResponse().toString());
     }
 
     rememberProcessedMessage(messageSid);
+    rememberProcessedFingerprint(incomingFrom, incomingText);
 
     let session = sessions[incomingFrom];
 
@@ -1697,16 +1732,19 @@ app.post('/whatsapp', async (req, res) => {
 
       if (directIntent && directIntent !== 'generico') {
         setSessionIntent(session, directIntent);
+
         twiml.message(
           buildStartMessageByIntent(directIntent, profileName) +
             '\n\n' +
             session.questions[0]
         );
-      } else {
-        session.state = 'menu';
-        twiml.message(buildWelcomeMenu(profileName));
+
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
       }
 
+      session.state = 'menu';
+      twiml.message(buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }

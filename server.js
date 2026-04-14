@@ -922,30 +922,23 @@ function getRecipients(intent) {
 function buildWelcomeMenu(profileName) {
   const customerName = formatCustomerName(profileName);
 
+  function buildWelcomeMenu(profileName) {
+  const customerName = formatCustomerName(profileName);
+
   return (
-    `👋 Ciao ${customerName}!\n\n` +
-    `Benvenuto in *TRASPORTI DP* 🚗🔥\n\n` +
-    `Ti aiutiamo subito in modo semplice e veloce.\n` +
-    `Scegli il servizio che ti serve:\n\n` +
-    `━━━━━━━━━━━━━━━\n` +
-    `🔧 *1. OFFICINA*\n` +
-    `Tagliandi, riparazioni, diagnosi\n\n` +
-    `🚐 *2. NOLEGGIO*\n` +
-    `Auto, furgoni, pulmini\n\n` +
-    `🚗 *3. VENDITA AUTO*\n` +
-    `Usato garantito\n\n` +
-    `🚛 *4. TRASPORTO VEICOLI*\n` +
-    `Consegne e bisarca\n\n` +
-    `📞 *5. CONTATTO DIRETTO*\n` +
-    `Parla con il nostro staff\n\n` +
-    `🅿️ *6. PARCHEGGIO / SOSTA*\n` +
-    `Anche sosta camper\n` +
-    `━━━━━━━━━━━━━━━\n\n` +
-    `✍️ Scrivi il *numero* oppure il *nome del servizio*\n` +
-    `Esempio: *2* oppure *noleggio*`
+    `Ciao ${customerName} 👋\n\n` +
+    `Benvenuto in *Trasporti DP*.\n\n` +
+    `Scegli il servizio:\n\n` +
+    `1️⃣ Officina\n` +
+    `2️⃣ Noleggio\n` +
+    `3️⃣ Vendita auto\n` +
+    `4️⃣ Trasporto veicoli\n` +
+    `5️⃣ Contatto diretto\n` +
+    `6️⃣ Parcheggio / Sosta\n\n` +
+    `Scrivi solo il numero.\n` +
+    `Esempio: *2*`
   );
 }
-
 function buildStartMessageByIntent(intent, profileName) {
   const customerName = formatCustomerName(profileName);
 

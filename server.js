@@ -567,6 +567,7 @@ function prettifyVehicleCode(code) {
 
   if (c === 'F1-VAN') return 'Gruppo F1 - Furgone';
   if (c === 'F2-PC') return 'Gruppo F2 - P. Corto';
+  if (c === 'F3-PL') return 'Gruppo F3 - P. Lungo';
   if (c === 'P2-9P') return 'Gruppo P2 - 9 Posti';
   if (c === 'P1-8P') return 'Gruppo P1 - 8 Posti';
   if (c === 'A1' || c === 'A1-COMPACT ECO' || c === 'A1 - COMPACT ECO') {
@@ -596,6 +597,7 @@ function humanizeVehicleName(name, code) {
   if (upperCode.includes('P1-8P')) return 'Gruppo P1 - 8 Posti';
   if (upperCode.includes('F1-VAN')) return 'Gruppo F1 - Furgone';
   if (upperCode.includes('F2-PC')) return 'Gruppo F2 - P. Corto';
+  if (upperCode.includes('F3-PL')) return 'Gruppo F3 - P. Lungo';
   if (upperCode.startsWith('A1')) return 'Gruppo A1 - Compact Eco';
   if (upperCode.startsWith('A2')) return 'Gruppo A2 - Compact';
   if (upperCode.startsWith('A3')) return 'Gruppo A3 - Compact Elite';
@@ -922,12 +924,8 @@ function getRecipients(intent) {
 function buildWelcomeMenu(profileName) {
   const customerName = formatCustomerName(profileName);
 
-  function buildWelcomeMenu(profileName) {
-  const customerName = formatCustomerName(profileName);
-
   return (
     `Ciao ${customerName} 👋\n\n` +
-    `Benvenuto in *Trasporti DP*.\n\n` +
     `Scegli il servizio:\n\n` +
     `1️⃣ Officina\n` +
     `2️⃣ Noleggio\n` +
@@ -939,6 +937,7 @@ function buildWelcomeMenu(profileName) {
     `Esempio: *2*`
   );
 }
+
 function buildStartMessageByIntent(intent, profileName) {
   const customerName = formatCustomerName(profileName);
 
@@ -1022,21 +1021,20 @@ function buildQuestions(intent) {
 
 function buildInvalidChoiceMessage() {
   return (
-    `❌ Non ho capito la scelta.\n\n` +
-    `Puoi scrivermi uno di questi servizi:\n\n` +
-    `1️⃣ Officina\n` +
-    `2️⃣ Noleggio\n` +
-    `3️⃣ Vendita auto\n` +
-    `4️⃣ Trasporto veicoli\n` +
-    `5️⃣ Contatto diretto\n` +
-    `6️⃣ Parcheggio / Sosta\n\n` +
-    `Oppure scrivi direttamente quello che ti serve 👍`
+    'Scelta non valida.\n\n' +
+    'Scrivi:\n' +
+    '1 per Officina\n' +
+    '2 per Noleggio\n' +
+    '3 per Vendita auto\n' +
+    '4 per Trasporto veicoli\n' +
+    '5 per Contatto diretto\n' +
+    '6 per Parcheggio / Sosta'
   );
 }
 
 function buildServiceChangedMessage(intent, profileName) {
   return (
-    'Nessun problema, cambiamo subito servizio 👍\n\n' +
+    'Va bene 👍\n\n' +
     buildStartMessageByIntent(intent, profileName) +
     '\n\n' +
     buildQuestions(intent)[0]
@@ -1072,9 +1070,8 @@ function buildVehicleChoiceMessage(
     `Ho trovato queste disponibilità per *${requestedVehicle}* dal *${dateRange.startLabel}* al *${dateRange.endLabel}*:\n` +
     `🚗 *Km richiesti:* ${requestedKm} km${extraText}\n\n` +
     `${lines.join('\n\n')}\n\n` +
-    'I mezzi visualizzati sono le *categorie disponibili* del gestionale.\n\n' +
-    'Scrivimi *1*, *2* oppure *3* per scegliere quello che preferisci.\n' +
-    'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+    `Scrivimi *1*, *2* oppure *3*.\n` +
+    `Se vuoi cambiare, scrivi *indietro* oppure *altra data*.`
   );
 }
 
@@ -1084,9 +1081,9 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
   if (intent === 'officina') {
     return (
       `Grazie ${customerName} ✅\n\n` +
-      'Ho inoltrato correttamente la tua richiesta al reparto *Officina*.\n' +
-      'Ti ricontatteremo il prima possibile su questo numero WhatsApp.\n\n' +
-      `Se preferisci, puoi prenotare direttamente anche da qui:\n${LINK_OFFICINA}`
+      'Ho inoltrato la tua richiesta al reparto *Officina*.\n' +
+      'Ti ricontatteremo presto su questo numero.\n\n' +
+      `Se preferisci, puoi prenotare anche qui:\n${LINK_OFFICINA}`
     );
   }
 
@@ -1094,18 +1091,18 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     if (extra.unavailableBecauseStationClosed) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
-        `Per il periodo *${extra.startLabel} - ${extra.endLabel}* il ritiro automatico non risulta disponibile dalla stazione selezionata.\n\n` +
-        'Puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
-        'Esempio: *18/04 - 21/04*'
+        `Per il periodo *${extra.startLabel} - ${extra.endLabel}* il ritiro automatico non risulta disponibile.\n\n` +
+        `Puoi provare con un’altra data.\n` +
+        `Esempio: *18/04 - 21/04*`
       );
     }
 
     if (extra.afterEveningCutoff) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
-        'Per il *ritiro di oggi* il sistema automatico è disponibile solo fino alle *18:30*.\n\n' +
-        'Puoi scrivermi una *data da domani in poi* oppure un nuovo periodo.\n' +
-        'Esempio: *14/04 - 16/04*'
+        `Per il *ritiro di oggi* il sistema automatico è disponibile solo fino alle *18:30*.\n\n` +
+        `Scrivimi una data da domani in poi.\n` +
+        `Esempio: *14/04 - 16/04*`
       );
     }
 
@@ -1113,8 +1110,8 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
       return (
         `Grazie ${customerName} 🙏\n\n` +
         `Al momento non risultano disponibilità immediate per *${extra.requestedVehicle}* dal *${extra.startLabel}* al *${extra.endLabel}*.\n\n` +
-        'Puoi provare subito con un’altra data scrivendomi direttamente il nuovo periodo.\n' +
-        'Esempio: *18/04 - 21/04*'
+        `Puoi provare con un’altra data.\n` +
+        `Esempio: *18/04 - 21/04*`
       );
     }
 
@@ -1125,12 +1122,11 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
 
       return (
         `Grazie ${customerName} ✅\n\n` +
-        'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.\n\n' +
         `🚐 *Mezzo scelto:* ${extra.vehicleName}\n` +
         `📅 *Periodo:* dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
         `🚗 *Km richiesti:* ${extra.requestedKm || 0} km\n` +
         `💰 *Prezzo noleggio:* € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
-        `Puoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
+        `Puoi pagare il *solo costo del noleggio* qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
         `La *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
       );
     }
@@ -1167,13 +1163,13 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
 
     const paymentPart =
       extra.paymentLink
-        ? `\n\nPuoi effettuare il pagamento del *solo costo del noleggio* da qui:\n${extra.paymentLink}` +
+        ? `\n\nPuoi pagare il *solo costo del noleggio* qui:\n${extra.paymentLink}` +
           `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`
         : `\n\nLa *caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)}* verrà gestita separatamente dal nostro staff.`;
 
     return (
       `Grazie ${customerName} ✅\n\n` +
-      'La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.' +
+      `La tua richiesta per il reparto *Noleggio* è stata registrata correttamente.` +
       datesPart +
       kmPart +
       pricePart +
@@ -1185,7 +1181,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     return (
       `Grazie ${customerName} ✅\n\n` +
       'Ho inoltrato correttamente la tua richiesta al reparto *Vendita auto*.\n' +
-      'Ti ricontatteremo al più presto su questo numero WhatsApp.'
+      'Ti ricontatteremo presto su questo numero.'
     );
   }
 
@@ -1193,7 +1189,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     return (
       `Grazie ${customerName} ✅\n\n` +
       'Ho inoltrato correttamente la tua richiesta al reparto *Trasporto veicoli*.\n' +
-      'Ti ricontatteremo al più presto su questo numero WhatsApp.'
+      'Ti ricontatteremo presto su questo numero.'
     );
   }
 
@@ -1201,7 +1197,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     return (
       `Grazie ${customerName} ✅\n\n` +
       'Ho inoltrato la tua richiesta a un nostro *responsabile*.\n' +
-      'Ti ricontatteremo il prima possibile su questo numero WhatsApp.'
+      'Ti ricontatteremo il prima possibile.'
     );
   }
 
@@ -1216,7 +1212,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
         : '';
 
     const paymentPart = extra.paymentLink
-      ? `\n\nPer confermare puoi effettuare il pagamento qui:\n${extra.paymentLink}`
+      ? `\n\nPer confermare puoi pagare qui:\n${extra.paymentLink}`
       : '\n\nTi invieremo conferma e modalità di pagamento al più presto.';
 
     return (
@@ -1466,7 +1462,7 @@ function validateAnswer(session, answer) {
       valid: false,
       message:
         'Se vuoi scegliere un mezzo scrivimi *1*, *2* oppure *3*.\n' +
-        'Se invece vuoi cambiare, puoi scrivere *indietro*, *menu* oppure *altra data*.'
+        'Se vuoi cambiare, scrivi *indietro* oppure *altra data*.'
     };
   }
 
@@ -1475,7 +1471,7 @@ function validateAnswer(session, answer) {
       return {
         valid: false,
         message:
-          'Prima indicami il *mezzo richiesto* 😊\n\nEsempio: *pulmino*, *furgone*, *auto*.'
+          'Prima indicami il *mezzo richiesto*.\n\nEsempio: *pulmino*, *furgone*, *auto*.'
       };
     }
 
@@ -1501,7 +1497,7 @@ function validateAnswer(session, answer) {
       return {
         valid: false,
         message:
-          'Prima indicami il *tipo di mezzo* 😊\n\nEsempio: *Auto*, *Furgone*, *Camper*.'
+          'Prima indicami il *tipo di mezzo*.\n\nEsempio: *Auto*, *Furgone*, *Camper*.'
       };
     }
 
@@ -1682,7 +1678,7 @@ app.post('/whatsapp', async (req, res) => {
         session.createdAt = Date.now();
 
         twiml.message(
-          'Va bene 👍\n\nMandami pure le date del noleggio.\n\n' +
+          'Va bene.\n\nMandami pure le date del noleggio.\n\n' +
             session.questions[1]
         );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1697,7 +1693,7 @@ app.post('/whatsapp', async (req, res) => {
         session.createdAt = Date.now();
 
         twiml.message(
-          'Nessun problema 👍\n\nTorniamo alla domanda precedente:\n\n' +
+          'Torniamo alla domanda precedente:\n\n' +
             session.questions[session.questionIndex]
         );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1712,7 +1708,7 @@ app.post('/whatsapp', async (req, res) => {
       session.pendingOptions = null;
       session.createdAt = Date.now();
 
-      twiml.message('Va bene 👌\n\n' + buildWelcomeMenu(profileName));
+      twiml.message(buildWelcomeMenu(profileName));
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -1844,12 +1840,25 @@ app.post('/whatsapp', async (req, res) => {
         const dateRange = extractDateRange(session.answers[1]);
         const requestedKm = extractKilometers(session.answers[2]);
 
-        if (dateRange && requestedKm !== null && isAfterEveningCutoff(dateRange.startDate)) {
+        if (!dateRange || requestedKm === null) {
+          twiml.message(
+            'Non riesco a leggere bene i dati del noleggio.\n\nRiproviamo dalle date.\n\n' +
+              session.questions[1]
+          );
+          session.state = 'questions';
+          session.questionIndex = 1;
+          session.answers = [requestedVehicle];
+          session.createdAt = Date.now();
+          res.writeHead(200, { 'Content-Type': 'text/xml' });
+          return res.end(twiml.toString());
+        }
+
+        if (isAfterEveningCutoff(dateRange.startDate)) {
           twiml.message(
             `Grazie ${formatCustomerName(profileName)} 🙏\n\n` +
-            'Per il *ritiro di oggi* il sistema automatico è disponibile solo fino alle *18:30*.\n\n' +
-            'Scrivimi una data da *domani in poi*.\n' +
-            'Esempio: *14/04 - 16/04*'
+              'Per il *ritiro di oggi* il sistema automatico è disponibile solo fino alle *18:30*.\n\n' +
+              'Scrivimi una data da *domani in poi*.\n' +
+              'Esempio: *14/04 - 16/04*'
           );
 
           session.state = 'questions';
@@ -1861,7 +1870,7 @@ app.post('/whatsapp', async (req, res) => {
           return res.end(twiml.toString());
         }
 
-        if (dateRange && requestedKm !== null && canUseCarRental()) {
+        if (canUseCarRental()) {
           try {
             const avail = await getCarRentalAvailability({
               vehicleText: requestedVehicle,
@@ -1913,6 +1922,7 @@ app.post('/whatsapp', async (req, res) => {
                 days: dateRange.days,
                 requestedKm,
                 extraSera,
+                quote,
                 vehicles: topVehicles
               };
 
@@ -2104,16 +2114,39 @@ app.post('/whatsapp', async (req, res) => {
 
       if (!selected) {
         twiml.message(
-          'Scelta non valida 😊\n\n' +
+          'Scelta non valida.\n\n' +
             'Scrivimi *1*, *2* oppure *3*.\n' +
-            'Se vuoi cambiare, puoi scrivere anche *indietro*, *menu* oppure *altra data*.'
+            'Se vuoi cambiare, scrivi *indietro* oppure *altra data*.'
         );
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
 
-      const prezzoFinale = selected.estimatedTotalAmount;
-      const extraSera = session.pendingOptions.extraSera || false;
+      const giorni = session.pendingOptions.days || 1;
+      const kmRichiesti = session.pendingOptions.requestedKm || 0;
+
+      let prezzoFinale = selected.estimatedTotalAmount;
+      let extraSera = session.pendingOptions.extraSera || false;
+
+      if (session.pendingOptions.quote) {
+        prezzoFinale = Math.round(
+          session.pendingOptions.quote.totalIncVatWithEvening * 100
+        ) / 100;
+      } else {
+        const prezzoGiornaliero = NOLEGGIO_PRICE_PER_DAY_EUR;
+        const kmInclusiTotali = NOLEGGIO_KM_INCLUDED_PER_DAY * giorni;
+        const kmExtra = Math.max(0, kmRichiesti - kmInclusiTotali);
+        const costoKmExtra = kmExtra * NOLEGGIO_EXTRA_KM_EUR;
+        const imponibile = prezzoGiornaliero * giorni + costoKmExtra;
+
+        prezzoFinale = imponibile * (1 + IVA_RATE);
+
+        if (extraSera) {
+          prezzoFinale += 30;
+        }
+
+        prezzoFinale = Math.round(prezzoFinale * 100) / 100;
+      }
 
       const internalExtra = {
         fromCarRental: true,
@@ -2122,8 +2155,8 @@ app.post('/whatsapp', async (req, res) => {
         vehicleCode: selected.code,
         startLabel: session.pendingOptions.startLabel,
         endLabel: session.pendingOptions.endLabel,
-        days: session.pendingOptions.days,
-        requestedKm: session.pendingOptions.requestedKm || 0,
+        days: giorni,
+        requestedKm: kmRichiesti,
         estimatedTotalAmount: prezzoFinale,
         extraSera: extraSera
       };
@@ -2132,7 +2165,7 @@ app.post('/whatsapp', async (req, res) => {
         try {
           const payment = await createNexiPayMailLink({
             amountCents: euroToCents(prezzoFinale),
-            description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`,
+            description: `Pagamento noleggio ${selected.name} - ${giorni} giorni`,
             customerWhatsapp: formatWhatsappNumber(incomingFrom)
           });
 
@@ -2145,7 +2178,7 @@ app.post('/whatsapp', async (req, res) => {
             vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
             startLabel: session.pendingOptions.startLabel,
             endLabel: session.pendingOptions.endLabel,
-            requestedKm: session.pendingOptions.requestedKm || 0,
+            requestedKm: kmRichiesti,
             amount: prezzoFinale
           };
         } catch (error) {

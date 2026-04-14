@@ -867,17 +867,12 @@ function detectIntent(text) {
   }
 
   if (
-    msg === '2' ||
-    msg.includes('noleggio') ||
-    msg.includes('noleggiare') ||
-    msg.includes('furgone') ||
-    msg.includes('furgoni') ||
-    msg.includes('pulmino') ||
-    msg.includes('auto')
-  ) {
-    return 'noleggio';
-  }
-
+  msg === '2' ||
+  msg === 'noleggio' ||
+  msg.includes('noleggiare')
+) {
+  return 'noleggio';
+}
   if (
     msg === '3' ||
     msg.includes('vendita') ||

@@ -834,22 +834,14 @@ function isResetCommand(text) {
 
 function isBackCommand(text) {
   const msg = normalize(text);
-  return [
-    'indietro',
-    'torna',
-    'torna indietro',
-    'annulla'
-  ].includes(msg);
+  return ['indietro', 'torna', 'torna indietro', 'annulla'].includes(msg);
 }
 
 function isAnotherDateCommand(text) {
   const msg = normalize(text);
-  return [
-    'altra data',
-    'altre date',
-    'cambio data',
-    'cambiare data'
-  ].includes(msg);
+  return ['altra data', 'altre date', 'cambio data', 'cambiare data'].includes(
+    msg
+  );
 }
 
 function detectIntent(text) {
@@ -963,7 +955,7 @@ function buildWelcomeMenu(profileName) {
     `5️⃣ Contatto diretto\n` +
     `6️⃣ Parcheggio / Sosta\n\n` +
     `Scrivi solo il numero.\n` +
-    `Esempio: *2*`
+    `Esempio: 2`
   );
 }
 
@@ -1086,7 +1078,9 @@ function buildVehicleChoiceMessage(
       label += ` (${v.code})`;
     }
 
-    return `${i + 1}️⃣ ${label}\n💰 € ${formatEuroNumber(v.estimatedTotalAmount)}`;
+    return `${i + 1}️⃣ ${label}\n💰 € ${formatEuroNumber(
+      v.estimatedTotalAmount
+    )}`;
   });
 
   const extraText = extraSera
@@ -1142,9 +1136,15 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
         `🚐 Mezzo scelto: ${extra.vehicleName}\n` +
         `📅 Periodo: dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n` +
         `🚗 Km richiesti: ${extra.requestedKm || 0} km\n` +
-        `💰 Prezzo noleggio: € ${formatEuroNumber(extra.estimatedTotalAmount)}${extraText}\n\n` +
-        `Puoi pagare il solo costo del noleggio qui:\n${extra.paymentLink || 'Link non disponibile'}\n\n` +
-        `La caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)} verrà gestita separatamente dal nostro staff.`
+        `💰 Prezzo noleggio: € ${formatEuroNumber(
+          extra.estimatedTotalAmount
+        )}${extraText}\n\n` +
+        `Puoi pagare il solo costo del noleggio qui:\n${
+          extra.paymentLink || 'Link non disponibile'
+        }\n\n` +
+        `La caparra di € ${eurosFromCents(
+          NOLEGGIO_DEPOSIT_CENTS
+        )} verrà gestita separatamente dal nostro staff.`
       );
     }
 
@@ -1271,7 +1271,9 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
       periodLine +
       `Corrente: ${yesNoLabel(a[2])}\n` +
       `Acqua: ${yesNoLabel(a[3])}\n` +
-      (extra.amountCents ? `Importo: € ${eurosFromCents(extra.amountCents)}\n` : '') +
+      (extra.amountCents
+        ? `Importo: € ${eurosFromCents(extra.amountCents)}\n`
+        : '') +
       (extra.paymentLink ? `Link Nexi: ${extra.paymentLink}\n` : '')
     );
   }
@@ -1363,7 +1365,10 @@ async function notifyPaymentSuccess(data) {
         `Grazie da Trasporti DP.`
     });
   } catch (error) {
-    console.error('Errore invio conferma pagamento al cliente:', error.message);
+    console.error(
+      'Errore invio conferma pagamento al cliente:',
+      error.message
+    );
   }
 }
 
@@ -1522,7 +1527,10 @@ app.post('/nexi/notify', async (req, res) => {
       body.result ||
       '';
 
-    if (String(esito).toUpperCase() === 'OK' && transactions[codiceTransazione]) {
+    if (
+      String(esito).toUpperCase() === 'OK' &&
+      transactions[codiceTransazione]
+    ) {
       const tx = transactions[codiceTransazione];
       if (!tx.notifiedServerCallback) {
         tx.notifiedServerCallback = true;
@@ -1565,7 +1573,11 @@ app.post('/whatsapp', async (req, res) => {
     }
 
     if (alreadyProcessedFingerprint(incomingFrom, incomingText)) {
-      console.log('Messaggio duplicato ignorato da fingerprint:', incomingFrom, incomingText);
+      console.log(
+        'Messaggio duplicato ignorato da fingerprint:',
+        incomingFrom,
+        incomingText
+      );
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(new twilio.twiml.MessagingResponse().toString());
     }
@@ -1642,7 +1654,9 @@ app.post('/whatsapp', async (req, res) => {
       if (isBackCommand(incomingText) || isAnotherDateCommand(incomingText)) {
         session.state = 'questions';
         session.questionIndex = 1;
-        session.answers = [session.pendingOptions?.requestedVehicle || session.answers[0]];
+        session.answers = [
+          session.pendingOptions?.requestedVehicle || session.answers[0]
+        ];
         session.pendingOptions = null;
         session.createdAt = Date.now();
 
@@ -1673,13 +1687,18 @@ app.post('/whatsapp', async (req, res) => {
       }
 
       const quote = session.pendingOptions?.quote;
-      const prezzoFinale = Math.round(Number(quote?.totalFinal || selected.estimatedTotalAmount || 0) * 100) / 100;
+      const prezzoFinale =
+        Math.round(
+          Number(quote?.totalFinal || selected.estimatedTotalAmount || 0) * 100
+        ) / 100;
       const extraSera = Boolean(quote?.extraSera);
 
       const internalExtra = {
         fromCarRental: true,
         requestedVehicle: session.pendingOptions.requestedVehicle,
-        vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
+        vehicleName: selected.code
+          ? `${selected.name} (${selected.code})`
+          : selected.name,
         vehicleCode: selected.code,
         startLabel: session.pendingOptions.startLabel,
         endLabel: session.pendingOptions.endLabel,
@@ -1703,7 +1722,9 @@ app.post('/whatsapp', async (req, res) => {
             codiceTransazione: payment.codiceTransazione,
             customerName: profileName,
             customerWhatsapp: incomingFrom,
-            vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name,
+            vehicleName: selected.code
+              ? `${selected.name} (${selected.code})`
+              : selected.name,
             startLabel: session.pendingOptions.startLabel,
             endLabel: session.pendingOptions.endLabel,
             requestedKm: session.pendingOptions.requestedKm || 0,
@@ -1714,7 +1735,9 @@ app.post('/whatsapp', async (req, res) => {
         }
       }
 
-      twiml.message(buildCustomerConfirmation('noleggio', profileName, internalExtra));
+      twiml.message(
+        buildCustomerConfirmation('noleggio', profileName, internalExtra)
+      );
       clearSession(incomingFrom);
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -1788,7 +1811,10 @@ app.post('/whatsapp', async (req, res) => {
           incomingFrom,
           profileName
         );
-        await sendInternalNotification(getRecipients(session.intent), internalMessage);
+        await sendInternalNotification(
+          getRecipients(session.intent),
+          internalMessage
+        );
 
         twiml.message(buildCustomerConfirmation(session.intent, profileName));
         clearSession(incomingFrom);
@@ -1802,7 +1828,10 @@ app.post('/whatsapp', async (req, res) => {
           incomingFrom,
           profileName
         );
-        await sendInternalNotification(getRecipients(session.intent), internalMessage);
+        await sendInternalNotification(
+          getRecipients(session.intent),
+          internalMessage
+        );
 
         twiml.message(buildCustomerConfirmation(session.intent, profileName));
         clearSession(incomingFrom);
@@ -1816,7 +1845,10 @@ app.post('/whatsapp', async (req, res) => {
           incomingFrom,
           profileName
         );
-        await sendInternalNotification(getRecipients(session.intent), internalMessage);
+        await sendInternalNotification(
+          getRecipients(session.intent),
+          internalMessage
+        );
 
         twiml.message(buildCustomerConfirmation(session.intent, profileName));
         clearSession(incomingFrom);
@@ -1830,7 +1862,10 @@ app.post('/whatsapp', async (req, res) => {
           incomingFrom,
           profileName
         );
-        await sendInternalNotification(getRecipients(session.intent), internalMessage);
+        await sendInternalNotification(
+          getRecipients(session.intent),
+          internalMessage
+        );
 
         twiml.message(buildCustomerConfirmation(session.intent, profileName));
         clearSession(incomingFrom);
@@ -1852,7 +1887,9 @@ app.post('/whatsapp', async (req, res) => {
           try {
             const payment = await createNexiPayMailLink({
               amountCents: quote.totalCents,
-              description: `Parcheggio/Sosta ${session.answers[0] || ''} - ${quote.giorni} giorni`,
+              description: `Parcheggio/Sosta ${
+                session.answers[0] || ''
+              } - ${quote.giorni} giorni`,
               customerWhatsapp: formatWhatsappNumber(incomingFrom)
             });
             internalExtra.paymentLink = payment.payMailUrl;
@@ -1867,9 +1904,14 @@ app.post('/whatsapp', async (req, res) => {
           profileName,
           internalExtra
         );
-        await sendInternalNotification(getRecipients(session.intent), internalMessage);
+        await sendInternalNotification(
+          getRecipients(session.intent),
+          internalMessage
+        );
 
-        twiml.message(buildCustomerConfirmation(session.intent, profileName, internalExtra));
+        twiml.message(
+          buildCustomerConfirmation(session.intent, profileName, internalExtra)
+        );
         clearSession(incomingFrom);
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -2018,9 +2060,21 @@ app.post('/whatsapp', async (req, res) => {
       }
     }
 
-    resetSession(incomingFrom, profileName);
-    sessions[incomingFrom].state = 'menu';
-    twiml.message(buildWelcomeMenu(profileName));
+    // fallback finale: NON tornare al menu se la sessione è attiva
+    if (!session.intent) {
+      resetSession(incomingFrom, profileName);
+      sessions[incomingFrom].state = 'menu';
+      twiml.message(buildWelcomeMenu(profileName));
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
+    }
+
+    const safeQuestion =
+      session.questions?.[session.questionIndex] ||
+      session.questions?.[session.questions.length - 1] ||
+      'Scrivimi pure il messaggio precedente un’altra volta.';
+
+    twiml.message(safeQuestion);
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());
   } catch (error) {

@@ -670,12 +670,49 @@ function humanizeVehicleName(name, code) {
   return cleaned;
 }
 
+function findAmountInObject(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  const possibleKeys = [
+    '@_EstimatedTotalAmount',
+    '@_RateTotalAmount',
+    '@_Amount',
+    'EstimatedTotalAmount',
+    'RateTotalAmount',
+    'Amount'
+  ];
+
+  for (const key of possibleKeys) {
+    if (obj[key] !== undefined && obj[key] !== null && obj[key] !== '') {
+      const value = Number(String(obj[key]).replace(',', '.'));
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+
+  for (const key of Object.keys(obj)) {
+    const found = findAmountInObject(obj[key]);
+    if (found) return found;
+  }
+
+  return null;
+}
+
 function normalizeVehicleLabel(item) {
   const vehAvailCore = item?.VehAvailCore || item?.['ns1:VehAvailCore'] || {};
+  const vehAvailInfo = item?.VehAvailInfo || item?.['ns1:VehAvailInfo'] || {};
   const vehicle = item?.Vehicle || item?.['ns1:Vehicle'] || vehAvailCore?.Vehicle || {};
   const makeModel = item?.VehMakeModel || item?.['ns1:VehMakeModel'] || vehicle?.VehMakeModel || {};
-  const vehClass = item?.VehClass || item?.['ns1:VehClass'] || {};
-  const vehType = item?.VehType || item?.['ns1:VehType'] || {};
+  const vehClass = item?.VehClass || item?.['ns1:VehClass'] || vehicle?.VehClass || {};
+  const vehType = item?.VehType || item?.['ns1:VehType'] || vehicle?.VehType || {};
+
+  const totalCharge =
+    item?.TotalCharge ||
+    item?.['ns1:TotalCharge'] ||
+    vehAvailCore?.TotalCharge ||
+    vehAvailCore?.['ns1:TotalCharge'] ||
+    vehAvailInfo?.TotalCharge ||
+    vehAvailInfo?.['ns1:TotalCharge'] ||
+    null;
 
   const rawCode =
     vehicle?.['@_Code'] ||
@@ -696,10 +733,12 @@ function normalizeVehicleLabel(item) {
 
   name = humanizeVehicleName(name, code);
 
+  const estimatedTotalAmount = findAmountInObject(totalCharge) || findAmountInObject(item);
+
   return {
     code: String(code || '').trim(),
     name: String(name || '').trim(),
-    estimatedTotalAmount: null,
+    estimatedTotalAmount,
     raw: item
   };
 }
@@ -857,8 +896,7 @@ async function createCarRentalReservation({ selectedRental, contractData, incomi
             </Address>
           </Primary>
         </Customer>
-        
-       
+        <TotalCharge CurrencyCode="EUR" EstimatedTotalAmount="${Number(selectedRental.amount || 0).toFixed(2)}"/>
       </VehResRQCore>
       <VehResRQInfo ResStatus="Book">
         <RentalPaymentPref>
@@ -1681,7 +1719,7 @@ app.post('/whatsapp', async (req, res) => {
       }
 
       const quote = session.pendingOptions?.quote;
-      const prezzoFinale = Math.round(Number(quote?.totalFinal || selected.estimatedTotalAmount || 0) * 100) / 100;
+      const prezzoFinale = Math.round(Number(selected.estimatedTotalAmount || quote?.totalFinal || 0) * 100) / 100;
       const amountExVat = Math.round(Number(quote?.totalExVat || prezzoFinale / (1 + IVA_RATE)) * 100) / 100;
       const vatAmount = Math.round((prezzoFinale - amountExVat) * 100) / 100;
       const extraSera = Boolean(quote?.extraSera);
@@ -2008,7 +2046,7 @@ app.post('/whatsapp', async (req, res) => {
 
           const pricedVehicles = vehicles.slice(0, 3).map((v) => ({
             ...v,
-            estimatedTotalAmount: quote.totalFinal
+            estimatedTotalAmount: Number(v.estimatedTotalAmount || quote.totalFinal)
           }));
 
           await notifyPrices(profileName, incomingFrom, {

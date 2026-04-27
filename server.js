@@ -799,6 +799,11 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
   });
 
   const xmlText = await response.text();
+  console.log("XML PRENOTAZIONE INVIATO:");
+console.log(xml);
+
+console.log("RISPOSTA PRENOTAZIONE GESTIONALE:");
+console.log(xmlText);
   if (!response.ok) throw new Error(`Errore HTTP gestionale: ${response.status}`);
 
   const parsed = xmlParser.parse(xmlText);

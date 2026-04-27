@@ -9,6 +9,12 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+// LOG MINIMO PER CAPIRE SE RENDER RICEVE DAVVERO LE CHIAMATE
+app.use((req, res, next) => {
+  console.log(`[REQ] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 const PORT = process.env.PORT || 3000;
 
 const client = twilio(
@@ -799,11 +805,6 @@ async function getCarRentalAvailability({ vehicleText, startDate, endDate }) {
   });
 
   const xmlText = await response.text();
-  console.log("XML PRENOTAZIONE INVIATO:");
-console.log(xml);
-
-console.log("RISPOSTA PRENOTAZIONE GESTIONALE:");
-console.log(xmlText);
   if (!response.ok) throw new Error(`Errore HTTP gestionale: ${response.status}`);
 
   const parsed = xmlParser.parse(xmlText);
@@ -1535,7 +1536,19 @@ async function finalizeRentalContract({ session, incomingFrom, profileName, twim
 // ROUTE BASE
 // =========================
 app.get('/', (req, res) => {
+  console.log('[TEST] Homepage aperta');
   res.send('Server WhatsApp DP attivo ✅');
+});
+
+app.get('/test', (req, res) => {
+  console.log('[TEST] Route /test chiamata correttamente');
+  res.send('TEST OK - Render riceve le chiamate ✅');
+});
+
+// Alias di sicurezza: se Twilio è configurato su /webhook funziona uguale
+app.post('/webhook', (req, res, next) => {
+  req.url = '/whatsapp';
+  app.handle(req, res, next);
 });
 
 app.get('/nexi/result', async (req, res) => {

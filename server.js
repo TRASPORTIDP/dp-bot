@@ -1670,7 +1670,26 @@ app.post('/whatsapp', async (req, res) => {
       const quote = session.pendingOptions?.quote;
       const prezzoFinale = Math.round(Number(quote?.totalFinal || selected.estimatedTotalAmount || 0) * 100) / 100;
       const extraSera = Boolean(quote?.extraSera);
+// 🚀 CREAZIONE PRENOTAZIONE
+try {
+  const reservation = await createCarRentalReservation({
+    pickup: session.pendingOptions.startDate.toISOString(),
+    return: new Date(
+      session.pendingOptions.startDate.getTime() +
+      (session.pendingOptions.days * 86400000)
+    ).toISOString(),
+    vehicleCode: selected.code,
+    nome: profileName,
+    cognome: 'Cliente',
+    telefono: incomingFrom,
+    prezzo: prezzoFinale
+  });
 
+  console.log("PRENOTAZIONE OK:", reservation);
+
+} catch (e) {
+  console.error("ERRORE PRENOTAZIONE:", e.message);
+}      
       const internalExtra = {
         fromCarRental: true,
         requestedVehicle: session.pendingOptions.requestedVehicle,
@@ -2032,3 +2051,61 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server avviato sulla porta ${PORT}`);
 });
+async function createCarRentalReservation(data) {
+  const xml = `
+<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.opentravel.org/OTA/2003/05">
+  <SOAP-ENV:Body>
+    <ns1:OTA_VehResRQ>
+
+      <POS>
+        <Source>
+          <RequestorID Type="29" 
+            ID="${process.env.CARRENTAL_UID}" 
+            MessagePassword="${process.env.CARRENTAL_API_KEY}"/>
+        </Source>
+      </POS>
+
+      <VehResRQCore>
+        <VehRentalCore 
+          PickUpDateTime="${data.pickup}" 
+          ReturnDateTime="${data.return}">
+          
+          <PickUpLocation LocationCode="${process.env.CARRENTAL_LOCATION_CODE}"/>
+          <ReturnLocation LocationCode="${process.env.CARRENTAL_LOCATION_CODE}"/>
+        </VehRentalCore>
+
+        <VehPref>
+          <VehMakeModel Code="${data.vehicleCode}" />
+        </VehPref>
+
+        <Customer>
+          <Primary BirthDate="1990-01-01">
+            <PersonName>
+              <GivenName>${data.nome}</GivenName>
+              <Surname>${data.cognome}</Surname>
+            </PersonName>
+            <Telephone PhoneNumber="${data.telefono}"/>
+            <Email>${data.email || 'no@email.com'}</Email>
+          </Primary>
+        </Customer>
+
+        <TotalCharge CurrencyCode="EUR" EstimatedTotalAmount="${data.prezzo}"/>
+      </VehResRQCore>
+
+      <VehResRQInfo ResStatus="Book"/>
+
+    </ns1:OTA_VehResRQ>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+`;
+
+  const response = await fetch(process.env.CARRENTAL_AVAIL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/xml' },
+    body: xml
+  });
+
+  const text = await response.text();
+  return text;
+}

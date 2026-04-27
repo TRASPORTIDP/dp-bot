@@ -858,7 +858,7 @@ async function createCarRentalReservation({ selectedRental, contractData, incomi
           </Primary>
         </Customer>
         
-       <TotalCharge CurrencyCode="EUR" RateTotalAmount="${Number(selectedRental.amountExVat || 0).toFixed(2)}" EstimatedTotalAmount="${Number(selectedRental.amount || 0).toFixed(2)}"/>
+       
       </VehResRQCore>
       <VehResRQInfo ResStatus="Book">
         <RentalPaymentPref>

@@ -857,14 +857,8 @@ async function createCarRentalReservation({ selectedRental, contractData, incomi
             </Address>
           </Primary>
         </Customer>
-        <VehicleCharges>
-          <VehicleCharge Purpose="1" TaxInclusive="false" IncludedInEstTotalInd="true" IncludedInRate="true" Description="Noleggio ${xmlEscape(selectedRental.vehicleName)} - CF ${xmlEscape(contractData.cf)}" Amount="${Number(selectedRental.amountExVat || 0).toFixed(2)}" CurrencyCode="EUR">
-            <TaxAmounts>
-              <TaxAmount CurrencyCode="EUR" Percentage="22" Total="${Number(selectedRental.vatAmount || 0).toFixed(2)}"/>
-            </TaxAmounts>
-          </VehicleCharge>
-        </VehicleCharges>
-        <TotalCharge CurrencyCode="EUR" RateTotalAmount="${Number(selectedRental.amountExVat || 0).toFixed(2)}" EstimatedTotalAmount="${Number(selectedRental.amount || 0).toFixed(2)}"/>
+        
+       <TotalCharge CurrencyCode="EUR" RateTotalAmount="${Number(selectedRental.amountExVat || 0).toFixed(2)}" EstimatedTotalAmount="${Number(selectedRental.amount || 0).toFixed(2)}"/>
       </VehResRQCore>
       <VehResRQInfo ResStatus="Book">
         <RentalPaymentPref>

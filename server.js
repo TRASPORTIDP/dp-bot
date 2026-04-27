@@ -2126,6 +2126,18 @@ app.post('/whatsapp', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server avviato sulla porta ${PORT}`);
+// altre cose...
+
+app.post('/whatsapp', async (req, res) => {
+  console.log('[WHATSAPP] Messaggio ricevuto:', req.body);
+
+  const twiml = new twilio.twiml.MessagingResponse();
+  twiml.message('✅ DP BOT FUNZIONA');
+
+  res.writeHead(200, { 'Content-Type': 'text/xml' });
+  return res.end(twiml.toString());
+});
+
+app.listen(port, () => {
+  console.log(`Server avviato sulla porta ${port}`);
 });

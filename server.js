@@ -42,6 +42,10 @@ const CARRENTAL_AVAIL_URL = process.env.CARRENTAL_AVAIL_URL || 'https://crsbrk00
 const CARRENTAL_RES_URL = process.env.CARRENTAL_RES_URL || 'https://carrentalsoftware.myappy.it/web/ota/';
 const CARRENTAL_LOCATION_CODE = process.env.CARRENTAL_LOCATION_CODE || '57529906';
 
+const CRS_API_BASE_URL = (process.env.CRS_API_BASE_URL || 'https://carrentalsoftware.myappy.it/api/v1').replace(/\/+$/, '');
+const CRS_API_KEY = process.env.CRS_API_KEY || process.env.CARRENTAL_API_KEY || '';
+const CRS_BROKER_ID = process.env.CRS_BROKER_ID || process.env.CARRENTAL_UID || '';
+
 // =========================
 // MEMORIA
 // =========================
@@ -49,6 +53,21 @@ const sessions = {};
 const processedMessageSids = new Map();
 const processedMessageFingerprints = new Map();
 const transactions = {};
+
+function createSession(phoneOrProfileName, maybeProfileName) {
+  const profileName = maybeProfileName || phoneOrProfileName || 'Cliente';
+  return {
+    profileName,
+    state: 'menu',
+    intent: null,
+    questionIndex: 0,
+    questions: [],
+    answers: [],
+    pendingOptions: null,
+    pending: {},
+    createdAt: Date.now()
+  };
+}
 
 // =========================
 // UTILITY
@@ -248,14 +267,9 @@ function rememberProcessedMessage(messageSid) {
 function alreadyProcessedMessage(messageSid) { return messageSid ? processedMessageSids.has(messageSid) : false; }
 function buildMessageFingerprint(from, body) { return `${String(from || '').trim().toLowerCase()}|${String(body || '').trim().toLowerCase()}`; }
 function rememberProcessedFingerprint(from, body) {
-  // FIX PULITO:
-  // deduplica testuale disattivata. Resta MessageSid Twilio.
   return;
 }
 function alreadyProcessedFingerprint(from, body) {
-  // FIX PULITO:
-  // non scarto messaggi uguali ravvicinati.
-  // Esempio: Città = Terni e Provincia = Terni.
   return false;
 }
 function resetSession(phone, profileName = 'Cliente') { return createSession(phone, profileName); }
@@ -764,6 +778,103 @@ function validateAnswer(session, answer) {
   return { valid: true };
 }
 
+
+function isoOnly(value) {
+  const txt = String(value || '').trim();
+  if (!txt) return '';
+  const iso = txt.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const it = txt.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (it) {
+    let y = it[3];
+    if (y.length === 2) y = '20' + y;
+    return `${y}-${String(it[2]).padStart(2, '0')}-${String(it[1]).padStart(2, '0')}`;
+  }
+  return txt;
+}
+
+function buildClientReservationUpdatePayload(contractData) {
+  const c = contractData || {};
+  const driver0 = {
+    first_name: c.first_name || c.firstName || '',
+    name: c.name || c.surname || '',
+    address: c.address || '',
+    city: c.city || '',
+    province: c.province || '',
+    zip_code: c.zip_code || c.zipCode || '',
+    country_id: c.country_id || '111',
+    nationality: c.nationality || 'IT',
+    phone: c.phone || '',
+    email: c.email || '',
+    place_of_birth: c.place_of_birth || c.placeOfBirth || '',
+    date_of_birth: isoOnly(c.date_of_birth || c.birthDate || ''),
+    tax_number: c.tax_number || c.taxNumber || '',
+    id_type: c.id_type || 'id',
+    id_number: c.id_number || c.documentNumber || '',
+    id_issuer: c.id_issuer || c.idIssuer || '',
+    id_issuer_locality: c.id_issuer_locality || c.city || '',
+    id_issue_date: isoOnly(c.id_issue_date || c.idIssueDate || ''),
+    id_expiry_date: isoOnly(c.id_expiry_date || c.idExpiryDate || ''),
+    license_number: c.license_number || c.licenseNumber || '',
+    license_issuer: c.license_issuer || c.licenseIssuer || '',
+    license_issuer_locality: c.license_issuer_locality || c.city || '',
+    license_issue_date: isoOnly(c.license_issue_date || c.licenseIssueDate || ''),
+    license_expiry_date: isoOnly(c.license_expiry_date || c.licenseExpiryDate || '')
+  };
+
+  if (c.file_id) driver0.file_id = c.file_id;
+  if (c.file_license) driver0.file_license = c.file_license;
+  if (c.file_residence_cert) driver0.file_residence_cert = c.file_residence_cert;
+
+  const payload = { client_driver: { "0": driver0 } };
+
+  if (c.hasSecondDriver && c.secondDriverName) {
+    const second = splitName(c.secondDriverName);
+    payload.client_driver["1"] = {
+      first_name: second.name || second.first || '',
+      name: second.surname || second.last || '',
+      address: c.address || '',
+      city: c.city || '',
+      province: c.province || '',
+      zip_code: c.zip_code || c.zipCode || '',
+      country_id: c.country_id || '111',
+      nationality: c.nationality || 'IT',
+      phone: c.phone || ''
+    };
+  }
+  return payload;
+}
+
+async function updateClientReservationDriverData(reservationUid, contractData) {
+  if (!reservationUid) throw new Error('reservation uid mancante');
+  const url = `${CRS_API_BASE_URL}/client_reservation/${encodeURIComponent(reservationUid)}/client_reservation_update`;
+  const payload = buildClientReservationUpdatePayload(contractData);
+
+  console.log('📤 CRS UPDATE URL:', url);
+  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+  if (CRS_API_KEY) {
+    headers.Authorization = `Bearer ${CRS_API_KEY}`;
+    headers['X-API-Key'] = CRS_API_KEY;
+    headers.apiKey = CRS_API_KEY;
+  }
+  if (CRS_BROKER_ID) {
+    headers['X-Broker-ID'] = CRS_BROKER_ID;
+    headers.broker_id = CRS_BROKER_ID;
+  }
+
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+  const text = await r.text();
+  let data = {};
+  try { data = JSON.parse(text); } catch (_) { data = { raw: text }; }
+  console.log('📥 CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
+
+  if (!r.ok) throw new Error(`HTTP CRS ${r.status}: ${text}`);
+  if (data.success === false) throw new Error(data.error || data.message || 'Update CRS fallito');
+  return data;
+}
+
 // =========================
 // ROUTE BASE
 // =========================
@@ -1068,6 +1179,26 @@ app.post('/whatsapp', async (req, res) => {
         }
       }
       const internalExtra = { requestedVehicle: session.pendingOptions.requestedVehicle, vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name, vehicleCode: selected.code, startLabel: session.pendingOptions.startLabel, endLabel: session.pendingOptions.endLabel, days: session.pendingOptions.days, requestedKm: session.pendingOptions.requestedKm || 0, estimatedTotalAmount: prezzoFinale, reservationStatus: reservation?.reservationStatus || '', reservationId: reservation?.confirmationId || '' };
+      try {
+        if (internalExtra.reservationId && session.pendingOptions.contractData) {
+          const upd = await updateClientReservationDriverData(internalExtra.reservationId, session.pendingOptions.contractData);
+          internalExtra.clientReservationUpdateId =
+            upd?.result?.client_reservation_update?.uid ||
+            upd?.client_reservation_update?.uid ||
+            '';
+        }
+      } catch (updateError) {
+        console.error('⚠️ ERRORE UPDATE CLIENTE/AUTISTA CRS:', updateError.message);
+        await sendInternalNotification(
+          GENERAL_NUMBERS,
+          `⚠️ ERRORE UPDATE ANAGRAFICA CLIENTE/AUTISTA\n\n` +
+          `👤 ${profileName}\n` +
+          `📞 ${incomingFrom}\n` +
+          `🧾 Prenotazione: ${internalExtra.reservationId || '-'}\n` +
+          `Errore: ${updateError.message}`
+        );
+      }
+
       if (canUseNexi() && prezzoFinale > 0) {
         try {
           const payment = await createNexiPayMailLink({ amountCents: euroToCents(prezzoFinale), description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`, customerWhatsapp: formatWhatsappNumber(incomingFrom) });
@@ -1188,4 +1319,4 @@ app.post('/whatsapp', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP PULITO avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP FINALE MYAPPY avviato sulla porta ${PORT}`));

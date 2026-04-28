@@ -603,6 +603,93 @@ function buildInternalMessage(session, incomingFrom, profileName, extra = {}) {
   return `🔔 NUOVA RICHIESTA GENERICA\n\n👤 Nome WhatsApp: ${customerName}\n📞 Numero cliente: ${whatsappNumber}`;
 }
 
+
+function htmlEscape(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function buildContractHtml(tx) {
+  const c = tx.contractData || {};
+  const contractId = tx.reservationId || tx.codiceTransazione || '';
+  const secondDriver = c.hasSecondDriver
+    ? `<p><strong>Secondo autista:</strong> ${htmlEscape(c.secondDriverName)}</p>`
+    : `<p><strong>Secondo autista:</strong> NO</p>`;
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Contratto noleggio ${htmlEscape(contractId)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 35px; color: #111; }
+    .head { display:flex; justify-content:space-between; border-bottom:3px solid #111; padding-bottom:15px; margin-bottom:25px; }
+    h1 { margin:0; font-size:24px; }
+    h2 { margin-top:28px; border-bottom:1px solid #ddd; padding-bottom:8px; }
+    p { font-size:14px; line-height:1.35; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    td { border:1px solid #ddd; padding:9px; font-size:14px; }
+    .sign { margin-top:55px; display:flex; justify-content:space-between; gap:40px; }
+    .box { width:45%; border-top:1px solid #111; padding-top:8px; text-align:center; }
+    .note { margin-top:30px; font-size:12px; color:#333; }
+    @media print { button { display:none; } body { margin:20px; } }
+  </style>
+</head>
+<body>
+  <button onclick="window.print()" style="padding:12px 18px;margin-bottom:20px;">Stampa / Salva PDF</button>
+
+  <div class="head">
+    <div>
+      <h1>CONTRATTO DI NOLEGGIO</h1>
+      <p><strong>Trasporti DP S.r.l.</strong><br>Via Tuderte 466, Narni (TR)</p>
+    </div>
+    <div>
+      <p><strong>N. Prenotazione:</strong> ${htmlEscape(contractId)}<br>
+      <strong>Transazione:</strong> ${htmlEscape(tx.codiceTransazione)}<br>
+      <strong>Data:</strong> ${new Date().toLocaleDateString('it-IT')}</p>
+    </div>
+  </div>
+
+  <h2>Dati cliente / conducente principale</h2>
+  <table>
+    <tr><td><strong>Nome</strong></td><td>${htmlEscape(c.first_name)} ${htmlEscape(c.name)}</td></tr>
+    <tr><td><strong>Data e luogo nascita</strong></td><td>${htmlEscape(c.date_of_birth)} - ${htmlEscape(c.place_of_birth)}</td></tr>
+    <tr><td><strong>Codice fiscale</strong></td><td>${htmlEscape(c.tax_number)}</td></tr>
+    <tr><td><strong>Email</strong></td><td>${htmlEscape(c.email)}</td></tr>
+    <tr><td><strong>Telefono</strong></td><td>${htmlEscape(c.phone)}</td></tr>
+    <tr><td><strong>Indirizzo</strong></td><td>${htmlEscape(c.address)}, ${htmlEscape(c.city)} (${htmlEscape(c.province)}) ${htmlEscape(c.zip_code)}</td></tr>
+    <tr><td><strong>Documento</strong></td><td>${htmlEscape(c.id_number)} - rilasciato da ${htmlEscape(c.id_issuer)} - scadenza ${htmlEscape(c.id_expiry_date)}</td></tr>
+    <tr><td><strong>Patente</strong></td><td>${htmlEscape(c.license_number)} - rilasciata da ${htmlEscape(c.license_issuer)} - scadenza ${htmlEscape(c.license_expiry_date)}</td></tr>
+  </table>
+  ${secondDriver}
+
+  <h2>Dati noleggio</h2>
+  <table>
+    <tr><td><strong>Mezzo</strong></td><td>${htmlEscape(tx.vehicleName)}</td></tr>
+    <tr><td><strong>Periodo</strong></td><td>${htmlEscape(tx.startLabel)} - ${htmlEscape(tx.endLabel)}</td></tr>
+    <tr><td><strong>Km richiesti</strong></td><td>${htmlEscape(tx.requestedKm)} km</td></tr>
+    <tr><td><strong>Importo noleggio pagato</strong></td><td>€ ${htmlEscape(formatEuroNumber(tx.amount))}</td></tr>
+    <tr><td><strong>Caparra</strong></td><td>€ ${htmlEscape(eurosFromCents(NOLEGGIO_DEPOSIT_CENTS))} gestita separatamente</td></tr>
+  </table>
+
+  <h2>Condizioni</h2>
+  <p>Il cliente dichiara di aver fornito dati corretti e di accettare le condizioni di noleggio, le responsabilità sull’utilizzo del veicolo, eventuali franchigie, danni, multe, pedaggi e costi extra non inclusi nel pagamento iniziale.</p>
+  <p>La presente scheda viene generata automaticamente a seguito della prenotazione WhatsApp e del pagamento online.</p>
+
+  <div class="sign">
+    <div class="box">Firma cliente</div>
+    <div class="box">Trasporti DP S.r.l.</div>
+  </div>
+
+  <p class="note">Documento generato automaticamente dal sistema DP Rent.</p>
+</body>
+</html>`;
+}
+
 // =========================
 // NOTIFICHE
 // =========================
@@ -623,11 +710,38 @@ async function notifyPrices(profileName, incomingFrom, data) {
   await sendInternalNotification(GENERAL_NUMBERS, text);
 }
 async function notifyPaymentSuccess(data) {
-  const text = `✅ PAGAMENTO RICEVUTO\n\n👤 ${data.customerName}\n📞 ${data.customerWhatsapp}\n\n🚐 ${data.vehicleName}\n📅 ${data.startLabel} - ${data.endLabel}\n🚗 Km richiesti: ${data.requestedKm || 0} km\n💰 € ${formatEuroNumber(data.amount)}\n🧾 ${data.codiceTransazione}`;
+  const contractUrl = APP_BASE_URL ? `${APP_BASE_URL}/contratto/${encodeURIComponent(data.codiceTransazione)}` : '';
+  const text =
+    `✅ PAGAMENTO RICEVUTO\n\n` +
+    `👤 ${data.customerName}\n` +
+    `📞 ${data.customerWhatsapp}\n\n` +
+    `🚐 ${data.vehicleName}\n` +
+    `📅 ${data.startLabel} - ${data.endLabel}\n` +
+    `🚗 Km richiesti: ${data.requestedKm || 0} km\n` +
+    `💰 € ${formatEuroNumber(data.amount)}\n` +
+    `🧾 ${data.codiceTransazione}` +
+    (contractUrl ? `\n📄 Contratto: ${contractUrl}` : '');
   await sendInternalNotification(GENERAL_NUMBERS, text);
+
   try {
-    await client.messages.create({ from: TWILIO_WHATSAPP_NUMBER, to: data.customerWhatsapp, body: `Ciao ${data.customerName} 👋\n\nAbbiamo ricevuto correttamente il tuo pagamento ✅\n\n🚐 Mezzo: ${data.vehicleName}\n📅 Periodo: ${data.startLabel} - ${data.endLabel}\n🚗 Km richiesti: ${data.requestedKm || 0} km\n💰 Importo: € ${formatEuroNumber(data.amount)}\n\nGrazie da Trasporti DP.` });
-  } catch (error) { console.error('Errore invio conferma pagamento al cliente:', error.message); }
+    await client.messages.create({
+      from: TWILIO_WHATSAPP_NUMBER,
+      to: data.customerWhatsapp,
+      body:
+        `Ciao ${data.customerName} 👋\n\n` +
+        `Abbiamo ricevuto correttamente il tuo pagamento ✅\n\n` +
+        `🚐 Mezzo: ${data.vehicleName}\n` +
+        `📅 Periodo: ${data.startLabel} - ${data.endLabel}\n` +
+        `🚗 Km richiesti: ${data.requestedKm || 0} km\n` +
+        `💰 Importo: € ${formatEuroNumber(data.amount)}\n\n` +
+        (contractUrl
+          ? `📄 Contratto noleggio:\n${contractUrl}\n\nAprilo e premi “Stampa / Salva PDF”.\n\n`
+          : '') +
+        `Grazie da Trasporti DP.`
+    });
+  } catch (error) {
+    console.error('Errore invio conferma pagamento al cliente:', error.message);
+  }
 }
 
 // =========================
@@ -658,16 +772,72 @@ function validateAnswer(session, answer) {
 // ROUTE BASE
 // =========================
 app.get('/', (req, res) => res.send('Server WhatsApp DP attivo ✅'));
+
+app.get('/contratto/:codiceTransazione', (req, res) => {
+  const codiceTransazione = req.params.codiceTransazione || '';
+  const tx = transactions[codiceTransazione];
+
+  if (!tx) {
+    return res.status(404).send(
+      '<html><head><meta charset="utf-8"></head><body style="font-family:Arial;padding:40px"><h1>Contratto non trovato</h1><p>Il contratto non è disponibile o il server è stato riavviato. Contattare Trasporti DP.</p></body></html>'
+    );
+  }
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(buildContractHtml(tx));
+});
+
 app.get('/nexi/result', async (req, res) => {
+  let codiceTransazione = '';
   try {
-    const codiceTransazione = req.query.codiceTransazione || req.query.codTrans || req.query.orderId || '';
+    codiceTransazione = req.query.codiceTransazione || req.query.codTrans || req.query.orderId || '';
     if (codiceTransazione && transactions[codiceTransazione]) {
       const tx = transactions[codiceTransazione];
-      if (!tx.notifiedSuccessPage) { tx.notifiedSuccessPage = true; await notifyPaymentSuccess(tx); }
+      if (!tx.notifiedSuccessPage) {
+        tx.notifiedSuccessPage = true;
+        await notifyPaymentSuccess(tx);
+      }
     }
-  } catch (error) { console.error('Errore pagina success Nexi:', error.message); }
-  res.send('<html><head><meta charset="utf-8" /><title>Pagamento completato</title></head><body style="font-family:Arial;padding:40px;text-align:center"><h1>Pagamento completato ✅</h1><p>Grazie. Il pagamento risulta concluso.</p><p>Riceverà conferma dal nostro staff nel più breve tempo possibile.</p></body></html>');
+  } catch (error) {
+    console.error('Errore pagina success Nexi:', error.message);
+  }
+
+  const contractUrl = codiceTransazione && APP_BASE_URL
+    ? `${APP_BASE_URL}/contratto/${encodeURIComponent(codiceTransazione)}`
+    : '';
+
+  res.send(
+    `<html><head><meta charset="utf-8" /><title>Pagamento completato</title></head>` +
+    `<body style="font-family:Arial;padding:40px;text-align:center">` +
+    `<h1>Pagamento completato ✅</h1>` +
+    `<p>Grazie. Il pagamento risulta concluso.</p>` +
+    (contractUrl ? `<p><a href="${contractUrl}" style="font-size:20px">Apri contratto noleggio</a></p>` : '') +
+    `<p>Riceverà conferma WhatsApp dal nostro staff.</p>` +
+    `</body></html>`
+  );
 });
+
+app.post('/nexi/result', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const codiceTransazione = body.codiceTransazione || body.codTrans || body.orderId || body.transactionId || '';
+    const esito = String(body.esito || body.outcome || body.status || body.result || 'OK').toUpperCase();
+
+    if (codiceTransazione && transactions[codiceTransazione] && (esito === 'OK' || esito === 'SUCCESS' || esito === 'APPROVED')) {
+      const tx = transactions[codiceTransazione];
+      if (!tx.notifiedServerCallback) {
+        tx.notifiedServerCallback = true;
+        await notifyPaymentSuccess(tx);
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Errore Nexi result POST:', error);
+    res.sendStatus(500);
+  }
+});
+
 app.get('/nexi/cancel', (req, res) => res.send('<html><head><meta charset="utf-8" /><title>Pagamento annullato</title></head><body style="font-family:Arial;padding:40px;text-align:center"><h1>Pagamento annullato</h1><p>Il pagamento non è stato completato.</p></body></html>'));
 app.post('/nexi/notify', async (req, res) => {
   try {
@@ -906,7 +1076,19 @@ app.post('/whatsapp', async (req, res) => {
         try {
           const payment = await createNexiPayMailLink({ amountCents: euroToCents(prezzoFinale), description: `Pagamento noleggio ${selected.name} - ${session.pendingOptions.days} giorni`, customerWhatsapp: formatWhatsappNumber(incomingFrom) });
           internalExtra.paymentLink = payment.payMailUrl;
-          transactions[payment.codiceTransazione] = { codiceTransazione: payment.codiceTransazione, customerName: profileName, customerWhatsapp: incomingFrom, vehicleName: internalExtra.vehicleName, startLabel: internalExtra.startLabel, endLabel: internalExtra.endLabel, requestedKm: internalExtra.requestedKm, amount: prezzoFinale };
+          transactions[payment.codiceTransazione] = {
+            codiceTransazione: payment.codiceTransazione,
+            customerName: profileName,
+            customerWhatsapp: incomingFrom,
+            vehicleName: internalExtra.vehicleName,
+            startLabel: internalExtra.startLabel,
+            endLabel: internalExtra.endLabel,
+            requestedKm: internalExtra.requestedKm,
+            amount: prezzoFinale,
+            reservationId: internalExtra.reservationId || '',
+            reservationStatus: internalExtra.reservationStatus || '',
+            contractData: session.pendingOptions.contractData || null
+          };
         } catch (error) { console.error('Errore Nexi dopo prenotazione:', error.message); }
       }
       await sendInternalNotification(GENERAL_NUMBERS, `✅ PRENOTAZIONE NOLEGGIO CONFERMATA\n\n👤 ${profileName}\n📞 ${incomingFrom}\n🚐 ${internalExtra.vehicleName}\n📅 ${internalExtra.startLabel} - ${internalExtra.endLabel} (${internalExtra.days} giorni)\n🚗 Km: ${internalExtra.requestedKm}\n💰 € ${formatEuroNumber(prezzoFinale)}\n📌 Stato gestionale: ${internalExtra.reservationStatus || '-'}\n🧾 ID gestionale: ${internalExtra.reservationId || '-'}\n${internalExtra.paymentLink ? `\nLink Nexi: ${internalExtra.paymentLink}` : ''}`);

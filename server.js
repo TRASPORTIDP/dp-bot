@@ -192,6 +192,7 @@ function humanizeVehicleName(name, code) {
   return prettifyVehicleCode(upperCode) !== upperCode ? prettifyVehicleCode(upperCode) : cleaned;
 }
 function matchVehicleAgainstUserText(vehicle, userText) {
+  // Mostra sempre tutti i mezzi disponibili restituiti dal gestionale.
   return true;
 }
 function normalizeVehicleFromVehAvail(item) {

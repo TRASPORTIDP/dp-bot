@@ -295,6 +295,66 @@ function filterVehiclesByRequest(vehicles, requestText) {
   return filtered.length ? filtered : vehicles;
 }
 
+
+function extractOtaErrorText(parsedOrText) {
+  try {
+    if (!parsedOrText) return '';
+
+    if (typeof parsedOrText === 'string') {
+      const shortText = parsedOrText.match(/ShortText="([^"]+)"/i);
+      if (shortText) return shortText[1];
+
+      const textNode = parsedOrText.match(/<Error[^>]*>([\s\S]*?)<\/Error>/i);
+      if (textNode) return textNode[1].replace(/<[^>]+>/g, '').trim();
+
+      const fault = parsedOrText.match(/<faultstring>([\s\S]*?)<\/faultstring>/i);
+      if (fault) return fault[1].trim();
+
+      return '';
+    }
+
+    const err =
+      findFirst(parsedOrText, ['Error', 'ns1:Error']) ||
+      findFirst(parsedOrText, ['Errors', 'ns1:Errors']) ||
+      findFirst(parsedOrText, ['Fault', 'SOAP-ENV:Fault']);
+
+    if (!err) return '';
+
+    if (Array.isArray(err)) {
+      return err.map(e => e?.['@_ShortText'] || e?.['#text'] || JSON.stringify(e)).filter(Boolean).join(' | ');
+    }
+
+    return err?.['@_ShortText'] || err?.['#text'] || err?.faultstring || JSON.stringify(err);
+  } catch (_) {
+    return '';
+  }
+}
+
+function formatOtaErrorForCustomer(errorText) {
+  const txt = String(errorText || '').trim();
+  if (!txt) return 'Non riesco a leggere disponibilita dal gestionale. Riprova tra poco.';
+
+  if (txt.toLowerCase().includes('stazione') && txt.toLowerCase().includes('aperta')) {
+    return `La sede risulta chiusa per la data/orario scelto.
+
+Scegli un'altra data oppure scrivi:
+LUN-VEN 08:30-12:00
+SAB 08:30-12:00`;
+  }
+
+  return txt;
+}
+
+function isLikelyClosedByDay(date) {
+  // 0 domenica, 6 sabato. Da configurare: blocco domenica sicuro.
+  const d = date.getDay();
+  return d === 0;
+}
+
+function pickupHoursText() {
+  return 'Orari sede: Lun-Ven 08:30-12:00 / 15:00-18:30, Sab 08:30-12:00, Dom chiuso.';
+}
+
 function buildOrderId(prefix = 'DP') {
   return `${prefix}${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`.slice(0, 18);
 }
@@ -615,8 +675,8 @@ async function getAvailability(startDate, endDate) {
 
   if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
   const parsed = xmlParser.parse(text);
-  const err = findFirst(parsed, ['Errors', 'Error', 'ns1:Errors', 'ns1:Error']);
-  if (err) throw new Error(JSON.stringify(err));
+  const otaError = extractOtaErrorText(parsed) || extractOtaErrorText(text);
+  if (otaError) throw new Error(otaError);
   return arrayify(findFirst(parsed, ['VehAvail', 'ns1:VehAvail'])).map(vehicleFromAvail).filter(v => v.code || v.name);
 }
 
@@ -683,17 +743,14 @@ async function createReservation(session, from) {
   const text = await r.text();
   console.log('OTA_VehResRS:', text);
 
+  const parsed = xmlParser.parse(text);
+  const otaError = extractOtaErrorText(parsed) || extractOtaErrorText(text);
+
   if (!r.ok) {
-    const m = text.match(/<faultstring>([\s\S]*?)<\/faultstring>/i);
-    throw new Error(`HTTP prenotazione ${r.status}${m ? ' - ' + m[1] : ''}`);
+    throw new Error(`HTTP prenotazione ${r.status}${otaError ? ' - ' + otaError : ''}`);
   }
 
-  const parsed = xmlParser.parse(text);
-  const fault = findFirst(parsed, ['Fault', 'SOAP-ENV:Fault', 'soap:Fault']);
-  if (fault) throw new Error(JSON.stringify(fault));
-
-  const err = findFirst(parsed, ['Errors', 'Error', 'ns1:Errors', 'ns1:Error']);
-  if (err) throw new Error(JSON.stringify(err));
+  if (otaError) throw new Error(otaError);
 
   const reservation = findFirst(parsed, ['VehReservation', 'ns1:VehReservation']) || {};
   const confs = arrayify(findFirst(parsed, ['ConfID', 'ns1:ConfID']));
@@ -1026,7 +1083,7 @@ async function handleWhatsApp(req, res) {
           console.error('Errore disponibilità:', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non riesco a leggere disponibilità dal gestionale. Mandami un’altra data oppure riprova tra poco.'));
+          twiml.message(safeWhatsAppText(`${EMO.warn} ${formatOtaErrorForCustomer(e.message)}\n\n${pickupHoursText()}`));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1233,11 +1290,11 @@ async function handleWhatsApp(req, res) {
 ` +
           `Periodo: ${session.pending.startLabel} - ${session.pending.endLabel}
 ` +
-          `Errore reale gestionale: ${String(e.message).slice(0, 180)}`
+          `${formatOtaErrorForCustomer(e.message)}`
         );
         twiml.message(safeWhatsAppText(`Il gestionale ha rifiutato la prenotazione.
 
-Errore reale gestionale: ${String(e.message).slice(0, 180)}
+${formatOtaErrorForCustomer(e.message)}
 
 Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
@@ -1326,4 +1383,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent AZIENDA PATENTE NEXI avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent ERRORI OTA SMART avviato sulla porta ${PORT}`));

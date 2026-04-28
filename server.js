@@ -1104,5 +1104,3 @@ Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`)
 app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent CATALOGO VEICOLI avviato sulla porta ${PORT}`));

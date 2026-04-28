@@ -435,7 +435,7 @@ function contractQuestions() {
     'Nome e cognome conducente principale?',
     'Data di nascita? Esempio: 22/04/1982',
     'Luogo di nascita?',
-    'Codice fiscale?',
+    'Codice fiscale conducente?',
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
@@ -450,18 +450,24 @@ function contractQuestions() {
     'Ente rilascio patente? Esempio: Motorizzazione',
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
-    'C’e un secondo autista? Rispondi SI oppure NO.'
+    'Fatturazione PRIVATO o AZIENDA?',
+    'C’è un secondo autista? Rispondi SÌ oppure NO.'
   ];
 }
 
 function parseContractAnswers(a, profileName, from) {
   const n = splitName(a[0] || profileName);
-  return {
+  const billingRaw = normalize(a[18] || 'privato');
+  const isCompany = billingRaw.includes('azienda') || billingRaw.includes('societa') || billingRaw.includes('ditta');
+  const off = isCompany ? 10 : 0;
+
+  const c = {
     first_name: n.first,
     name: n.last,
+    full_name: `${n.first} ${n.last}`,
     date_of_birth: isoDate(a[1]),
     place_of_birth: a[2] || '',
-    tax_number: a[3] || '',
+    tax_number: String(a[3] || '').toUpperCase(),
     email: a[4] || '',
     phone: extractOnlyDigits(a[5] || String(from || '').replace('whatsapp:', '')),
     address: a[6] || '',
@@ -481,12 +487,44 @@ function parseContractAnswers(a, profileName, from) {
     license_issuer_locality: a[7] || '',
     license_issue_date: isoDate(a[16]),
     license_expiry_date: isoDate(a[17]),
-    hasSecondDriver: yesNo(a[18]) === 'SI',
-    secondDriverName: a[19] || ''
+    billing_type: isCompany ? 'company' : 'private',
+    type: isCompany ? 'company' : 'private',
+    company_name: '',
+    vat_number: '',
+    company_tax_number: '',
+    pec: '',
+    sdi_code: '',
+    contact_person: `${n.first} ${n.last}`,
+    billing_address: a[6] || '',
+    billing_city: a[7] || '',
+    billing_province: cleanProvince(a[8] || ''),
+    billing_zip_code: extractOnlyDigits(a[9] || '')
   };
+
+  if (isCompany) {
+    c.company_name = a[19] || '';
+    c.vat_number = String(a[20] || '').replace(/\s+/g, '').toUpperCase();
+    c.company_tax_number = String(a[21] || '').replace(/\s+/g, '').toUpperCase();
+    c.pec = a[22] || '';
+    c.sdi_code = String(a[23] || '').replace(/\s+/g, '').toUpperCase();
+    c.contact_person = a[24] || c.full_name;
+    c.billing_address = a[25] || c.address;
+    c.billing_city = a[26] || c.city;
+    c.billing_province = cleanProvince(a[27] || c.province);
+    c.billing_zip_code = extractOnlyDigits(a[28] || c.zip_code);
+  }
+
+  c.hasSecondDriver = yesNo(a[19 + off]) === 'SI';
+  c.secondDriverName = a[20 + off] || '';
+
+  return c;
 }
 
 function contractSummary(c) {
+  const billing = c.billing_type === 'company'
+    ? `\n${EMO.doc} *Fatturazione azienda*\nRagione sociale: ${c.company_name}\nP.IVA: ${c.vat_number}\nCF azienda: ${c.company_tax_number || '-'}\nPEC: ${c.pec || '-'}\nSDI: ${c.sdi_code || '-'}\nReferente: ${c.contact_person || '-'}\nSede: ${c.billing_address}, ${c.billing_city} (${c.billing_province}) ${c.billing_zip_code}`
+    : `\n${EMO.doc} *Fatturazione privato*`;
+
   return `${EMO.user} *${c.first_name} ${c.name}*
 ${EMO.cal} ${c.date_of_birth} - ${c.place_of_birth}
 ${EMO.doc} CF: ${c.tax_number}
@@ -494,8 +532,7 @@ ${EMO.mail} ${c.email}
 ${EMO.phone} ${c.phone}
 ${EMO.home} ${c.address}, ${c.city} (${c.province}) ${c.zip_code}
 ${EMO.doc} Documento: ${c.id_number} - scad. ${c.id_expiry_date}
-${EMO.car} Patente: ${c.license_number} - scad. ${c.license_expiry_date}${c.hasSecondDriver ? `
-${EMO.user} Secondo autista: ${c.secondDriverName}` : ''}`;
+${EMO.car} Patente: ${c.license_number} - scad. ${c.license_expiry_date}${billing}${c.hasSecondDriver ? `\n${EMO.user} Secondo autista: ${c.secondDriverName}` : ''}`;
 }
 
 function buildContractHtml(tx) {
@@ -677,6 +714,26 @@ async function createReservation(session, from) {
 
 
 function buildCrsUpdatePayload(c) {
+  const client = {
+    type: c.billing_type === 'company' ? 'company' : 'private',
+    first_name: c.billing_type === 'company' ? (c.contact_person || c.first_name || '') : (c.first_name || ''),
+    name: c.billing_type === 'company' ? (c.company_name || c.name || '') : (c.name || ''),
+    contact_person: c.contact_person || `${c.first_name || ''} ${c.name || ''}`.trim(),
+    vat_number: c.billing_type === 'company' ? (c.vat_number || '') : null,
+    tax_number: c.billing_type === 'company' ? (c.company_tax_number || c.vat_number || '') : (c.tax_number || ''),
+    pec: c.billing_type === 'company' ? (c.pec || null) : null,
+    sdi_code: c.billing_type === 'company' ? (c.sdi_code || null) : null,
+    email: c.email || '',
+    phone: c.phone || '',
+    address: c.billing_type === 'company' ? (c.billing_address || c.address || '') : (c.address || ''),
+    city: c.billing_type === 'company' ? (c.billing_city || c.city || '') : (c.city || ''),
+    province: c.billing_type === 'company' ? (c.billing_province || c.province || '') : (c.province || ''),
+    zip_code: c.billing_type === 'company' ? (c.billing_zip_code || c.zip_code || '') : (c.zip_code || ''),
+    country_id: c.country_id || '111',
+    date_of_birth: c.billing_type === 'company' ? null : (c.date_of_birth || ''),
+    place_of_birth: c.billing_type === 'company' ? null : (c.place_of_birth || '')
+  };
+
   const driver0 = {
     first_name: c.first_name || '',
     name: c.name || '',
@@ -704,7 +761,7 @@ function buildCrsUpdatePayload(c) {
     license_expiry_date: c.license_expiry_date || ''
   };
 
-  const payload = { client_driver: { "0": driver0 } };
+  const payload = { client, client_driver: { "0": driver0 } };
 
   if (c.hasSecondDriver && c.secondDriverName) {
     const s = splitName(c.secondDriverName);
@@ -717,7 +774,8 @@ function buildCrsUpdatePayload(c) {
       zip_code: c.zip_code || '',
       country_id: c.country_id || '111',
       nationality: c.nationality || 'IT',
-      phone: c.phone || ''
+      phone: c.phone || '',
+      email: c.email || ''
     };
   }
 
@@ -783,7 +841,6 @@ async function createNexiLink(amount, description, from, baseUrl) {
     mac: nexiMac({ apiKey: NEXI_ALIAS, codiceTransazione, importo, timeStamp }),
     timeout: String(NEXI_TIMEOUT_HOURS),
     url: `${callbackBase}/nexi/result`,
-    url_back: `${callbackBase}/nexi/cancel`,
     urlpost: `${callbackBase}/nexi/notify`,
     parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
@@ -1078,7 +1135,16 @@ async function handleWhatsApp(req, res) {
         return res.end(twiml.toString());
       }
 
-      if (idx === 18 && !yesNo(body)) {
+      if (idx === 18) {
+        const bt = normalize(body);
+        if (!(bt.includes('privato') || bt.includes('azienda') || bt.includes('societa') || bt.includes('ditta'))) {
+          twiml.message(safeWhatsAppText('Rispondi PRIVATO oppure AZIENDA.'));
+          res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
+          return res.end(twiml.toString());
+        }
+      }
+
+      if ((idx === 19 || idx === 29) && !yesNo(body)) {
         twiml.message(safeWhatsAppText('Rispondimi solo SI oppure NO.'));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
@@ -1086,7 +1152,25 @@ async function handleWhatsApp(req, res) {
 
       session.pending.contractAnswers.push(body);
 
-      if (idx === 18 && yesNo(body) === 'SI') {
+      if (idx === 18) {
+        const bt = normalize(body);
+        if (bt.includes('azienda') || bt.includes('societa') || bt.includes('ditta')) {
+          session.pending.contractQuestions.splice(19, 0,
+            'Ragione sociale azienda?',
+            'Partita IVA?',
+            'Codice fiscale azienda? Se uguale alla P.IVA riscrivi la P.IVA.',
+            'PEC azienda? Se non presente scrivi NO.',
+            'Codice SDI? Se non presente scrivi NO.',
+            'Referente aziendale?',
+            'Indirizzo fatturazione azienda?',
+            'Città fatturazione?',
+            'Provincia fatturazione? Esempio: TR',
+            'CAP fatturazione?'
+          );
+        }
+      }
+
+      if ((idx === 19 || idx === 29) && yesNo(body) === 'SI') {
         session.pending.contractQuestions.push('Nome e cognome del secondo autista.');
       }
 
@@ -1242,4 +1326,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent BELLO PAGAMENTO avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent AZIENDA PATENTE NEXI avviato sulla porta ${PORT}`));

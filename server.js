@@ -272,7 +272,7 @@ function findFirst(obj, keys) {
 
 
 function normVehicleCode(v) {
-  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[ââ]/g, '-').trim();
+  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[–—]/g, '-').trim();
 }
 
 function catalogByCode(code) {
@@ -311,12 +311,34 @@ function isDuplicateSid(sid) {
 
 function safeWhatsAppText(text) {
   return String(text || '')
-    .replace(/EUR+/g, 'EUR')
+    .normalize('NFC')
     .replace(/[\uFFFD]/g, '')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
-    .replace(/[ \t]+/g, ' ')
+    .replace(/\r\n/g, '\n')
     .trim();
 }
+
+const EMO = {
+  hi: '\u{1F44B}',
+  ok: '\u2705',
+  car: '\u{1F697}',
+  van: '\u{1F690}',
+  truck: '\u{1F69A}',
+  money: '\u{1F4B0}',
+  card: '\u{1F4B3}',
+  cal: '\u{1F4C5}',
+  doc: '\u{1F9FE}',
+  pin: '\u{1F4CC}',
+  user: '\u{1F464}',
+  phone: '\u{1F4DE}',
+  mail: '\u{1F4E7}',
+  home: '\u{1F3E0}',
+  warn: '\u26A0\uFE0F',
+  wrench: '\u{1F527}',
+  park: '\u{1F17F}\uFE0F',
+  pen: '\u270D\uFE0F',
+  search: '\u{1F50E}',
+  road: '\u{1F6E3}\uFE0F'
+};
 
 // =========================
 // SESSIONI STABILI
@@ -349,19 +371,19 @@ function touch(session) { session.createdAt = Date.now(); }
 // MENU
 // =========================
 function menuText(name) {
-  return `Ciao ${name || 'Cliente'}
+  return `${EMO.hi} *Ciao ${name || 'Cliente'}*
 
 Scegli il servizio:
 
-1) Officina
-2) Noleggio
-3) Vendita auto
-4) Trasporto veicoli
-5) Contatto diretto
-6) Parcheggio / Sosta
+1) ${EMO.wrench} Officina
+2) ${EMO.car} Noleggio
+3) ${EMO.money} Vendita auto
+4) ${EMO.truck} Trasporto veicoli
+5) ${EMO.phone} Contatto diretto
+6) ${EMO.park} Parcheggio / Sosta
 
-Scrivi solo il numero.
-Esempio: 2`;
+${EMO.pen} Scrivi solo il numero.
+Esempio: *2*`;
 }
 
 function detectIntent(text) {
@@ -381,7 +403,7 @@ function questionsFor(intent) {
   if (intent === 'vendita') return ['Che tipo di auto cerchi?', 'Budget indicativo?', 'Hai permuta?'];
   if (intent === 'trasporto') return ['Che veicolo devi trasportare?', 'Da dove ritirare?', 'Dove consegnare?', 'Quando ti serve?'];
   if (intent === 'contatto') return ['Scrivimi brevemente il motivo della richiesta.'];
-  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sÃ¬/no', 'Hai bisogno di acqua? sÃ¬/no'];
+  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sì/no', 'Hai bisogno di acqua? sì/no'];
   return [];
 }
 
@@ -417,10 +439,10 @@ function contractQuestions() {
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
-    'CittÃ ?',
+    'Città?',
     'Provincia? Esempio: TR',
     'CAP?',
-    'Numero documento / carta identitÃ ?',
+    'Numero documento / carta identità?',
     'Ente rilascio documento? Esempio: Comune di Terni',
     'Data rilascio documento? Esempio: 16/01/2020',
     'Scadenza documento? Esempio: 15/01/2028',
@@ -428,7 +450,7 @@ function contractQuestions() {
     'Ente rilascio patente? Esempio: Motorizzazione',
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
-    'Câe un secondo autista? Rispondi SI oppure NO.'
+    'C’e un secondo autista? Rispondi SI oppure NO.'
   ];
 }
 
@@ -465,7 +487,15 @@ function parseContractAnswers(a, profileName, from) {
 }
 
 function contractSummary(c) {
-  return ` ${c.first_name} ${c.name}\n ${c.date_of_birth} - ${c.place_of_birth}\n CF: ${c.tax_number}\n ${c.email}\n ${c.phone}\n ${c.address}, ${c.city} (${c.province}) ${c.zip_code}\n Documento: ${c.id_number} - scad. ${c.id_expiry_date}\n Patente: ${c.license_number} - scad. ${c.license_expiry_date}${c.hasSecondDriver ? `\n Secondo autista: ${c.secondDriverName}` : ''}`;
+  return `${EMO.user} *${c.first_name} ${c.name}*
+${EMO.cal} ${c.date_of_birth} - ${c.place_of_birth}
+${EMO.doc} CF: ${c.tax_number}
+${EMO.mail} ${c.email}
+${EMO.phone} ${c.phone}
+${EMO.home} ${c.address}, ${c.city} (${c.province}) ${c.zip_code}
+${EMO.doc} Documento: ${c.id_number} - scad. ${c.id_expiry_date}
+${EMO.car} Patente: ${c.license_number} - scad. ${c.license_expiry_date}${c.hasSecondDriver ? `
+${EMO.user} Secondo autista: ${c.secondDriverName}` : ''}`;
 }
 
 function buildContractHtml(tx) {
@@ -541,12 +571,12 @@ async function getAvailability(startDate, endDate) {
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore></VehAvailRQCore></ns1:OTA_VehAvailRateRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('ð¤ OTA_VehAvailRateRQ:', xml);
+  console.log('📤 OTA_VehAvailRateRQ:', xml);
   const r = await fetch(CARRENTAL_AVAIL_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('ð¥ OTA_VehAvailRateRS:', text);
+  console.log('📥 OTA_VehAvailRateRS:', text);
 
-  if (!r.ok) throw new Error(`HTTP disponibilitÃ  ${r.status}`);
+  if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
   const parsed = xmlParser.parse(text);
   const err = findFirst(parsed, ['Errors', 'Error', 'ns1:Errors', 'ns1:Error']);
   if (err) throw new Error(JSON.stringify(err));
@@ -710,14 +740,14 @@ async function updateReservationData(reservationId, contractData) {
     headers.broker_id = CRS_BROKER_ID;
   }
 
-  console.log('ð¤ CRS UPDATE URL:', url);
-  console.log('ð¤ CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+  console.log('📤 CRS UPDATE URL:', url);
+  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
 
   const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
   const text = await r.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  console.log('ð¥ CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
+  console.log('📥 CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
 
   if (!r.ok) throw new Error(`HTTP CRS ${r.status}: ${text}`);
   if (data.success === false) throw new Error(data.error || data.message || 'Update anagrafica fallito');
@@ -727,17 +757,24 @@ async function updateReservationData(reservationId, contractData) {
 // =========================
 // NEXI
 // =========================
+function publicBaseUrl(req) {
+  const proto = req?.headers?.['x-forwarded-proto'] || 'https';
+  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host || '';
+  return APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || (host ? `${proto}://${host}` : '');
+}
+
 function canUseNexi() {
-  return Boolean(NEXI_ALIAS && NEXI_MAC_KEY && APP_BASE_URL);
+  return Boolean(NEXI_ALIAS && NEXI_MAC_KEY);
 }
 function nexiMac({ apiKey, codiceTransazione, importo, timeStamp }) {
   const source = `apiKey=${apiKey}` + `codiceTransazione=${codiceTransazione}` + `importo=${importo}` + `timeStamp=${timeStamp}` + NEXI_MAC_KEY;
   return crypto.createHash('sha1').update(source).digest('hex');
 }
-async function createNexiLink(amount, description, from) {
+async function createNexiLink(amount, description, from, baseUrl) {
   const codiceTransazione = buildOrderId('DP');
   const timeStamp = Date.now().toString();
   const importo = String(euroToCents(amount));
+  const callbackBase = (baseUrl || APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
   const payload = {
     apiKey: NEXI_ALIAS,
     codiceTransazione,
@@ -745,21 +782,22 @@ async function createNexiLink(amount, description, from) {
     timeStamp,
     mac: nexiMac({ apiKey: NEXI_ALIAS, codiceTransazione, importo, timeStamp }),
     timeout: String(NEXI_TIMEOUT_HOURS),
-    url: `${APP_BASE_URL}/nexi/result`,
-    url_back: `${APP_BASE_URL}/nexi/cancel`,
-    urlpost: `${APP_BASE_URL}/nexi/notify`,
+    url: `${callbackBase}/nexi/result`,
+    url_back: `${callbackBase}/nexi/cancel`,
+    urlpost: `${callbackBase}/nexi/notify`,
     parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
 
-  console.log('ð¤ NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
+  console.log('📤 NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
   const r = await fetch(NEXI_PAYMAIL_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
-  console.log('ð¥ NEXI:', data);
+  console.log('📥 NEXI:', data);
 
   if (!r.ok) throw new Error(`HTTP Nexi ${r.status}`);
   if (data.esito !== 'OK') throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || 'Errore Nexi');
-  if (!data.payMailUrl) throw new Error('Nexi non ha restituito payMailUrl');
-  return { codiceTransazione, payMailUrl: data.payMailUrl };
+  const payUrl = data.payMailUrl || data.paymailUrl || data.url || data.urlPayMail || data.link || data.paymentUrl;
+  if (!payUrl) throw new Error('Nexi non ha restituito il link pagamento: ' + JSON.stringify(data).slice(0, 500));
+  return { codiceTransazione, payMailUrl: payUrl };
 }
 
 // =========================
@@ -928,10 +966,10 @@ async function handleWhatsApp(req, res) {
         try {
           vehicles = filterVehiclesByRequest(await getAvailability(range.startDate, range.endDate), session.answers[0]);
         } catch (e) {
-          console.error('Errore disponibilitÃ :', e.message);
+          console.error('Errore disponibilità:', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non riesco a leggere disponibilitÃ  dal gestionale. Mandami unâaltra data oppure riprova tra poco.'));
+          twiml.message(safeWhatsAppText('Non riesco a leggere disponibilità dal gestionale. Mandami un’altra data oppure riprova tra poco.'));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -939,7 +977,7 @@ async function handleWhatsApp(req, res) {
         if (!vehicles.length) {
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non trovo disponibilitÃ  per queste date. Mandami unâaltra data. Esempio: 18/05 - 20/05'));
+          twiml.message(safeWhatsAppText('Non trovo disponibilità per queste date. Mandami un’altra data. Esempio: 18/05 - 20/05'));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -958,7 +996,7 @@ async function handleWhatsApp(req, res) {
 
         await sendInternal(INTERNAL_GENERAL_NUMBERS, ` PREVENTIVO NOLEGGIO\n\n ${profileName}\n ${from}\n Richiesta: ${session.pending.requestedVehicle}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n Km: ${km}\n\n${session.pending.vehicles.map((v,i)=>`${i+1}) ${v.name} - EUR ${euro(v.estimatedTotalAmount)}`).join('\n')}`);
 
-        twiml.message(safeWhatsAppText(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}ï¸â£ ${v.name}\n EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`));
+        twiml.message(safeWhatsAppText(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}️⃣ ${v.name}\n EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
       }
@@ -1065,7 +1103,7 @@ async function handleWhatsApp(req, res) {
       session.state = 'confirm_noleggio';
       touch(session);
 
-      twiml.message(safeWhatsAppText(`Controlla i dati contratto:\n\n${contractSummary(session.pending.contractData)}\n\n Mezzo: ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`));
+      twiml.message(safeWhatsAppText(`${EMO.search} *Controlla i dati contratto*\n\n${contractSummary(session.pending.contractData)}\n\n Mezzo: ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`));
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
       return res.end(twiml.toString());
     }
@@ -1086,8 +1124,8 @@ async function handleWhatsApp(req, res) {
         return res.end(twiml.toString());
       }
 
-      // FIX: non faccio piÃ¹ un secondo controllo disponibilitÃ  con confronto codice.
-      // MyAppy puÃ² restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
+      // FIX: non faccio più un secondo controllo disponibilità con confronto codice.
+      // MyAppy può restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
       // Provo direttamente a prenotare il mezzo scelto dall'utente.
       let reservation;
       try {
@@ -1135,7 +1173,7 @@ Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`)
       let codiceTransazione = '';
       if (canUseNexi()) {
         try {
-          const payment = await createNexiLink(session.pending.prezzoFinale, `Noleggio ${session.pending.selectedVehicle.name}`, from);
+          const payment = await createNexiLink(session.pending.prezzoFinale, `Noleggio ${session.pending.selectedVehicle.name}`, from, publicBaseUrl(req));
           paymentLink = payment.payMailUrl;
           codiceTransazione = payment.codiceTransazione;
 
@@ -1154,13 +1192,33 @@ Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`)
             contractData: session.pending.contractData
           };
         } catch (e) {
-          console.error(' ERRORE NEXI:', e.message);
+          console.error('ERRORE NEXI:', e.message); await sendInternal(INTERNAL_GENERAL_NUMBERS, `ERRORE NEXI\nPrenotazione: ${reservation.id || '-'}\nErrore: ${e.message}`);
         }
       }
 
       await sendInternal(INTERNAL_GENERAL_NUMBERS, ` PRENOTAZIONE NOLEGGIO CONFERMATA\n\n ${profileName}\n ${from}\n ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n Prenotazione: ${reservation.id || '-'}\n Update anagrafica: ${updateId || '-'}\n\n${contractSummary(session.pending.contractData)}${paymentLink ? `\n\nLink Nexi: ${paymentLink}` : ''}`);
 
-      twiml.message(safeWhatsAppText(`Grazie ${profileName} \n\n Mezzo scelto: ${session.pending.selectedVehicle.name}\n Periodo: dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)\n Km richiesti: ${session.pending.requestedKm} km\n Preventivo gestionale: EUR ${euro(session.pending.prezzoFinale)}\n Prenotazione gestionale: ${reservation.id || '-'}\n Stato gestionale: ${reservation.status || '-'}\n\nPuoi pagare il solo costo del noleggio qui:\n${paymentLink || 'Ti invieremo il link pagamento appena pronto.'}\n\nLa caparra di EUR ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} verrÃ  gestita separatamente dal nostro staff.`));
+      twiml.message(safeWhatsAppText(`${EMO.ok} *PRENOTAZIONE CONFERMATA*
+
+Grazie *${profileName}*
+
+${EMO.van} *Mezzo scelto*
+${session.pending.selectedVehicle.name}
+
+${EMO.cal} *Periodo*
+Dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)
+
+${EMO.road} *Km richiesti:* ${session.pending.requestedKm} km
+${EMO.money} *Totale noleggio:* € ${euro(session.pending.prezzoFinale)}
+
+${EMO.doc} *Prenotazione gestionale:* ${reservation.id || '-'}
+${EMO.pin} *Stato:* ${reservation.status || '-'}
+
+${paymentLink ? `${EMO.card} *Pagamento online*\n${paymentLink}` : `${EMO.warn} Link pagamento non generato. Ti invieremo il link appena pronto.`}
+
+${EMO.money} Caparra € ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+
+*DP RENT*`));
 
       clearSession(from);
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
@@ -1184,4 +1242,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent VALIDAZIONE DATE avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent BELLO PAGAMENTO avviato sulla porta ${PORT}`));

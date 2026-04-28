@@ -575,7 +575,7 @@ function buildCustomerConfirmation(intent, profileName, extra = {}) {
     if (extra.unavailable) return `Grazie ${name} 🙏\n\nAl momento non risultano disponibilità immediate per ${extra.requestedVehicle} dal ${extra.startLabel} al ${extra.endLabel}.\n\nPuoi provare con un’altra data.\nEsempio: 18/04 - 21/04`;
     const contractLine = extra.reservationId ? `\n🧾 Prenotazione gestionale: ${extra.reservationId}` : '';
     const statusLine = extra.reservationStatus ? `\n📌 Stato gestionale: ${extra.reservationStatus}` : '';
-    return `Grazie ${name} ✅\n\n🚐 Mezzo scelto: ${extra.vehicleName}\n📅 Periodo: dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n🚗 Km richiesti: ${extra.requestedKm || 0} km\n💰 Preventivo gestionale: € ${formatEuroNumber(extra.estimatedTotalAmount)}${contractLine}${statusLine}\n\nPuoi pagare il solo costo del noleggio qui:\n${extra.paymentLink || 'Link non disponibile'}\n\nLa caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)} verrà gestita separatamente dal nostro staff.`;
+    return `Grazie ${name} ✅\n\n🚐 Mezzo scelto: ${extra.vehicleName}\n📅 Periodo: dal ${extra.startLabel} al ${extra.endLabel} (${extra.days} giorni)\n🚗 Km richiesti: ${extra.requestedKm || 0} km\n💰 Preventivo gestionale: € ${formatEuroNumber(extra.estimatedTotalAmount)}${contractLine}${statusLine}\n\n${extra.paymentLink ? `Puoi pagare il solo costo del noleggio qui:\n${extra.paymentLink}\n\n` : `Pagamento online momentaneamente non disponibile. Ti invieremo il link appena pronto.\n\n`}La caparra di € ${eurosFromCents(NOLEGGIO_DEPOSIT_CENTS)} verrà gestita separatamente dal nostro staff.`;
   }
   if (intent === 'vendita') return `Grazie ${name} ✅\n\nHo inoltrato correttamente la tua richiesta al reparto Vendita auto.\nTi ricontatteremo presto su questo numero.`;
   if (intent === 'trasporto') return `Grazie ${name} ✅\n\nHo inoltrato correttamente la tua richiesta al reparto Trasporto veicoli.\nTi ricontatteremo presto su questo numero.`;
@@ -816,10 +816,56 @@ app.post('/whatsapp', async (req, res) => {
         console.log('✅ PRENOTAZIONE GESTIONALE OK:', reservation.reservationStatus, reservation.confirmationId);
       } catch (e) {
         console.error('❌ ERRORE PRENOTAZIONE GESTIONALE:', e.message);
-        await sendInternalNotification(GENERAL_NUMBERS, `⚠️ ERRORE CREAZIONE PRENOTAZIONE GESTIONALE\n\n👤 ${profileName}\n📞 ${incomingFrom}\n🚐 ${selected.name}${selected.code ? ` (${selected.code})` : ''}\n📅 ${session.pendingOptions.startLabel} - ${session.pendingOptions.endLabel}\n💰 € ${formatEuroNumber(prezzoFinale)}\n\nErrore: ${e.message}`);
-        clearSession(incomingFrom);
-        twiml.message('Mi dispiace, non sono riuscito a creare la prenotazione nel gestionale. La richiesta è stata inviata allo staff e ti ricontatteremo.');
-        res.writeHead(200, { 'Content-Type': 'text/xml' }); return res.end(twiml.toString());
+        await sendInternalNotification(
+          GENERAL_NUMBERS,
+          `⚠️ ERRORE CREAZIONE PRENOTAZIONE GESTIONALE
+
+` +
+          `👤 ${profileName}
+` +
+          `📞 ${incomingFrom}
+` +
+          `🚐 ${selected.name}${selected.code ? ` (${selected.code})` : ''}
+` +
+          `📅 ${session.pendingOptions.startLabel} - ${session.pendingOptions.endLabel}
+` +
+          `💰 € ${formatEuroNumber(prezzoFinale)}
+
+` +
+          `Errore: ${e.message}`
+        );
+
+        try {
+          const retryMessage = await retryVehicleAvailabilityAfterReservationError({
+            session,
+            profileName,
+            incomingFrom,
+            selectedCode: selected.code,
+            errorMessage: e.message
+          });
+
+          twiml.message(retryMessage);
+          res.writeHead(200, { 'Content-Type': 'text/xml' });
+          return res.end(twiml.toString());
+        } catch (retryError) {
+          console.error('❌ ERRORE NUOVA RICERCA DOPO FALLIMENTO:', retryError.message);
+          session.state = 'questions';
+          session.questionIndex = 1;
+          session.answers = [session.pendingOptions?.requestedVehicle || session.answers?.[0] || ''];
+          session.pendingOptions = null;
+          session.createdAt = Date.now();
+
+          twiml.message(
+            `⚠️ Il mezzo selezionato non è più disponibile.
+
+` +
+            `Mandami un’altra data e rifaccio subito la ricerca.
+` +
+            `Esempio: 18/05 - 20/05`
+          );
+          res.writeHead(200, { 'Content-Type': 'text/xml' });
+          return res.end(twiml.toString());
+        }
       }
       const internalExtra = { requestedVehicle: session.pendingOptions.requestedVehicle, vehicleName: selected.code ? `${selected.name} (${selected.code})` : selected.name, vehicleCode: selected.code, startLabel: session.pendingOptions.startLabel, endLabel: session.pendingOptions.endLabel, days: session.pendingOptions.days, requestedKm: session.pendingOptions.requestedKm || 0, estimatedTotalAmount: prezzoFinale, reservationStatus: reservation?.reservationStatus || '', reservationId: reservation?.confirmationId || '' };
       if (canUseNexi() && prezzoFinale > 0) {

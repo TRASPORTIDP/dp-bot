@@ -623,7 +623,8 @@ async function notifyPayment(tx) {
 // =========================
 // ROUTES
 // =========================
-app.get('/', (req, res) => res.send('Server DP Rent stabile attivo ✅'));
+app.get('/', (req, res) => res.send('Server DP Rent attivo ✅'));
+app.get('/health', (req, res) => res.json({ ok: true, service: 'dp-rent', time: new Date().toISOString() }));
 
 app.get('/contratto/:codice', (req, res) => {
   const tx = transactions[req.params.codice];
@@ -668,7 +669,7 @@ app.get('/nexi/cancel', (req, res) => res.send('<h1>Pagamento annullato</h1>'));
 // =========================
 // WEBHOOK WHATSAPP
 // =========================
-app.post('/whatsapp', async (req, res) => {
+async function handleWhatsApp(req, res) {
   const twiml = new twilio.twiml.MessagingResponse();
   const from = cleanText(req.body.From).toLowerCase();
   const body = cleanText(req.body.Body);
@@ -942,7 +943,10 @@ app.post('/whatsapp', async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());
   }
-});
+}
+
+app.post('/whatsapp', handleWhatsApp);
+app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent RIFATTO STABILE avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent COMPLETO avviato sulla porta ${PORT}`));

@@ -248,19 +248,15 @@ function rememberProcessedMessage(messageSid) {
 function alreadyProcessedMessage(messageSid) { return messageSid ? processedMessageSids.has(messageSid) : false; }
 function buildMessageFingerprint(from, body) { return `${String(from || '').trim().toLowerCase()}|${String(body || '').trim().toLowerCase()}`; }
 function rememberProcessedFingerprint(from, body) {
-  const key = buildMessageFingerprint(from, body);
-  processedMessageFingerprints.set(key, Date.now());
-  const now = Date.now();
-  for (const [fp, ts] of processedMessageFingerprints.entries()) if (now - ts > 8000) processedMessageFingerprints.delete(fp);
+  // FIX PULITO:
+  // deduplica testuale disattivata. Resta MessageSid Twilio.
+  return;
 }
-function alreadyProcessedFingerprint(from, body) { return processedMessageFingerprints.has(buildMessageFingerprint(from, body)); }
-
-// =========================
-// SESSIONI
-// =========================
-function createSession(phone, profileName) {
-  sessions[phone] = { profileName, state: 'idle', intent: null, questionIndex: 0, questions: [], answers: [], createdAt: Date.now(), pendingOptions: null };
-  return sessions[phone];
+function alreadyProcessedFingerprint(from, body) {
+  // FIX PULITO:
+  // non scarto messaggi uguali ravvicinati.
+  // Esempio: Città = Terni e Provincia = Terni.
+  return false;
 }
 function resetSession(phone, profileName = 'Cliente') { return createSession(phone, profileName); }
 function clearSession(phone) { delete sessions[phone]; }
@@ -1192,4 +1188,4 @@ app.post('/whatsapp', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP PULITO avviato sulla porta ${PORT}`));

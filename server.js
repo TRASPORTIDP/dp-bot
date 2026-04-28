@@ -241,7 +241,7 @@ function touch(session) { session.createdAt = Date.now(); }
 // MENU
 // =========================
 function menuText(name) {
-  return `Ciao ${name || 'Cliente'} 👋\n\nScegli il servizio:\n\n1️⃣ Officina\n2️⃣ Noleggio\n3️⃣ Vendita auto\n4️⃣ Trasporto veicoli\n5️⃣ Contatto diretto\n6️⃣ Parcheggio / Sosta\n\nScrivi solo il numero.\nEsempio: 2`;
+  return `Ciao ${name || 'Cliente'} ðŸ‘‹\n\nScegli il servizio:\n\n1ï¸âƒ£ Officina\n2ï¸âƒ£ Noleggio\n3ï¸âƒ£ Vendita auto\n4ï¸âƒ£ Trasporto veicoli\n5ï¸âƒ£ Contatto diretto\n6ï¸âƒ£ Parcheggio / Sosta\n\nScrivi solo il numero.\nEsempio: 2`;
 }
 
 function detectIntent(text) {
@@ -261,7 +261,7 @@ function questionsFor(intent) {
   if (intent === 'vendita') return ['Che tipo di auto cerchi?', 'Budget indicativo?', 'Hai permuta?'];
   if (intent === 'trasporto') return ['Che veicolo devi trasportare?', 'Da dove ritirare?', 'Dove consegnare?', 'Quando ti serve?'];
   if (intent === 'contatto') return ['Scrivimi brevemente il motivo della richiesta.'];
-  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sì/no', 'Hai bisogno di acqua? sì/no'];
+  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sÃ¬/no', 'Hai bisogno di acqua? sÃ¬/no'];
   return [];
 }
 
@@ -274,13 +274,13 @@ function startIntent(session, intent) {
   touch(session);
 
   const intro = {
-    officina: 'Perfetto 👌 Ti aiuto con l’Officina.',
-    noleggio: 'Perfetto 👌 Ti aiuto con il Noleggio.',
-    vendita: 'Perfetto 👌 Ti aiuto con la Vendita auto.',
-    trasporto: 'Perfetto 👌 Ti aiuto con il Trasporto veicoli.',
-    contatto: 'Perfetto 👌 Ti metto in contatto con un responsabile.',
-    sosta: 'Perfetto 👌 Ti aiuto con Parcheggio / Sosta.'
-  }[intent] || 'Perfetto 👌';
+    officina: 'Perfetto ðŸ‘Œ Ti aiuto con lâ€™Officina.',
+    noleggio: 'Perfetto ðŸ‘Œ Ti aiuto con il Noleggio.',
+    vendita: 'Perfetto ðŸ‘Œ Ti aiuto con la Vendita auto.',
+    trasporto: 'Perfetto ðŸ‘Œ Ti aiuto con il Trasporto veicoli.',
+    contatto: 'Perfetto ðŸ‘Œ Ti metto in contatto con un responsabile.',
+    sosta: 'Perfetto ðŸ‘Œ Ti aiuto con Parcheggio / Sosta.'
+  }[intent] || 'Perfetto ðŸ‘Œ';
 
   return `${intro}\n\n${questionsFor(intent)[0]}`;
 }
@@ -297,10 +297,10 @@ function contractQuestions() {
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
-    'Città?',
+    'CittÃ ?',
     'Provincia? Esempio: TR',
     'CAP?',
-    'Numero documento / carta identità?',
+    'Numero documento / carta identitÃ ?',
     'Ente rilascio documento? Esempio: Comune di Terni',
     'Data rilascio documento? Esempio: 16/01/2020',
     'Scadenza documento? Esempio: 15/01/2028',
@@ -308,7 +308,7 @@ function contractQuestions() {
     'Ente rilascio patente? Esempio: Motorizzazione',
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
-    'C’è un secondo autista? Rispondi SÌ oppure NO.'
+    'Câ€™Ã¨ un secondo autista? Rispondi SÃŒ oppure NO.'
   ];
 }
 
@@ -345,7 +345,7 @@ function parseContractAnswers(a, profileName, from) {
 }
 
 function contractSummary(c) {
-  return `👤 ${c.first_name} ${c.name}\n🎂 ${c.date_of_birth} - ${c.place_of_birth}\n🧾 CF: ${c.tax_number}\n📧 ${c.email}\n📞 ${c.phone}\n🏠 ${c.address}, ${c.city} (${c.province}) ${c.zip_code}\n🪪 Documento: ${c.id_number} - scad. ${c.id_expiry_date}\n🚗 Patente: ${c.license_number} - scad. ${c.license_expiry_date}${c.hasSecondDriver ? `\n👥 Secondo autista: ${c.secondDriverName}` : ''}`;
+  return `ðŸ‘¤ ${c.first_name} ${c.name}\nðŸŽ‚ ${c.date_of_birth} - ${c.place_of_birth}\nðŸ§¾ CF: ${c.tax_number}\nðŸ“§ ${c.email}\nðŸ“ž ${c.phone}\nðŸ  ${c.address}, ${c.city} (${c.province}) ${c.zip_code}\nðŸªª Documento: ${c.id_number} - scad. ${c.id_expiry_date}\nðŸš— Patente: ${c.license_number} - scad. ${c.license_expiry_date}${c.hasSecondDriver ? `\nðŸ‘¥ Secondo autista: ${c.secondDriverName}` : ''}`;
 }
 
 function buildContractHtml(tx) {
@@ -371,8 +371,8 @@ function buildContractHtml(tx) {
 <tr><td>Mezzo</td><td>${htmlEscape(tx.vehicleName)}</td></tr>
 <tr><td>Periodo</td><td>${htmlEscape(tx.startLabel)} - ${htmlEscape(tx.endLabel)}</td></tr>
 <tr><td>Km richiesti</td><td>${htmlEscape(tx.requestedKm)} km</td></tr>
-<tr><td>Importo pagato</td><td>€ ${htmlEscape(euro(tx.amount))}</td></tr>
-<tr><td>Caparra</td><td>€ ${htmlEscape(centsToEuro(NOLEGGIO_DEPOSIT_CENTS))} gestita separatamente</td></tr>
+<tr><td>Importo pagato</td><td>â‚¬ ${htmlEscape(euro(tx.amount))}</td></tr>
+<tr><td>Caparra</td><td>â‚¬ ${htmlEscape(centsToEuro(NOLEGGIO_DEPOSIT_CENTS))} gestita separatamente</td></tr>
 </table>
 <h2>Condizioni</h2><p>Il cliente dichiara di aver fornito dati corretti e di accettare condizioni di noleggio, franchigie, danni, multe, pedaggi e costi extra non inclusi.</p>
 <div class="sign"><div class="box">Firma cliente</div><div class="box">Trasporti DP S.r.l.</div></div>
@@ -411,12 +411,12 @@ async function getAvailability(startDate, endDate) {
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore></VehAvailRQCore></ns1:OTA_VehAvailRateRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('📤 OTA_VehAvailRateRQ:', xml);
+  console.log('ðŸ“¤ OTA_VehAvailRateRQ:', xml);
   const r = await fetch(CARRENTAL_AVAIL_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('📥 OTA_VehAvailRateRS:', text);
+  console.log('ðŸ“¥ OTA_VehAvailRateRS:', text);
 
-  if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
+  if (!r.ok) throw new Error(`HTTP disponibilitÃ  ${r.status}`);
   const parsed = xmlParser.parse(text);
   const err = findFirst(parsed, ['Errors', 'Error', 'ns1:Errors', 'ns1:Error']);
   if (err) throw new Error(JSON.stringify(err));
@@ -459,10 +459,10 @@ ${secondXml}
 <TotalCharge CurrencyCode="EUR" RateTotalAmount="${net.toFixed(2)}" EstimatedTotalAmount="${amount.toFixed(2)}"/>
 </VehResRQCore><VehResRQInfo ResStatus="Book"/></ns1:OTA_VehResRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('📤 OTA_VehResRQ:', xml);
+  console.log('ðŸ“¤ OTA_VehResRQ:', xml);
   const r = await fetch(CARRENTAL_RES_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('📥 OTA_VehResRS:', text);
+  console.log('ðŸ“¥ OTA_VehResRS:', text);
 
   if (!r.ok) throw new Error(`HTTP prenotazione ${r.status}`);
   const parsed = xmlParser.parse(text);
@@ -539,14 +539,14 @@ async function updateReservationData(reservationId, contractData) {
     headers.broker_id = CRS_BROKER_ID;
   }
 
-  console.log('📤 CRS UPDATE URL:', url);
-  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+  console.log('ðŸ“¤ CRS UPDATE URL:', url);
+  console.log('ðŸ“¤ CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
 
   const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
   const text = await r.text();
   let data;
   try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  console.log('📥 CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
+  console.log('ðŸ“¥ CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
 
   if (!r.ok) throw new Error(`HTTP CRS ${r.status}: ${text}`);
   if (data.success === false) throw new Error(data.error || data.message || 'Update anagrafica fallito');
@@ -580,10 +580,10 @@ async function createNexiLink(amount, description, from) {
     parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
 
-  console.log('📤 NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
+  console.log('ðŸ“¤ NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
   const r = await fetch(NEXI_PAYMAIL_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
-  console.log('📥 NEXI:', data);
+  console.log('ðŸ“¥ NEXI:', data);
 
   if (!r.ok) throw new Error(`HTTP Nexi ${r.status}`);
   if (data.esito !== 'OK') throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || 'Errore Nexi');
@@ -598,22 +598,22 @@ async function sendInternal(numbers, body) {
   for (const to of numbers) {
     try {
       const msg = await client.messages.create({ from: TWILIO_WHATSAPP_NUMBER, to, body });
-      console.log('✅ NOTIFICA INVIATA:', to, msg.sid);
+      console.log('âœ… NOTIFICA INVIATA:', to, msg.sid);
     } catch (e) {
-      console.error('❌ ERRORE NOTIFICA:', to, e.message, e.code || '');
+      console.error('âŒ ERRORE NOTIFICA:', to, e.message, e.code || '');
     }
   }
 }
 
 async function notifyPayment(tx) {
   const contractUrl = APP_BASE_URL ? `${APP_BASE_URL}/contratto/${encodeURIComponent(tx.codiceTransazione)}` : '';
-  await sendInternal(INTERNAL_GENERAL_NUMBERS, `✅ PAGAMENTO RICEVUTO\n\n👤 ${tx.customerName}\n📞 ${tx.customerWhatsapp}\n🚐 ${tx.vehicleName}\n📅 ${tx.startLabel} - ${tx.endLabel}\n💰 € ${euro(tx.amount)}\n🧾 ${tx.codiceTransazione}${contractUrl ? `\n📄 Contratto: ${contractUrl}` : ''}`);
+  await sendInternal(INTERNAL_GENERAL_NUMBERS, `âœ… PAGAMENTO RICEVUTO\n\nðŸ‘¤ ${tx.customerName}\nðŸ“ž ${tx.customerWhatsapp}\nðŸš ${tx.vehicleName}\nðŸ“… ${tx.startLabel} - ${tx.endLabel}\nðŸ’° â‚¬ ${euro(tx.amount)}\nðŸ§¾ ${tx.codiceTransazione}${contractUrl ? `\nðŸ“„ Contratto: ${contractUrl}` : ''}`);
 
   try {
     await client.messages.create({
       from: TWILIO_WHATSAPP_NUMBER,
       to: tx.customerWhatsapp,
-      body: `✅ Pagamento ricevuto!\n\n🚐 ${tx.vehicleName}\n📅 ${tx.startLabel} - ${tx.endLabel}\n💰 € ${euro(tx.amount)}\n\n${contractUrl ? `📄 Contratto:\n${contractUrl}\n\n` : ''}Grazie da Trasporti DP.`
+      body: `âœ… Pagamento ricevuto!\n\nðŸš ${tx.vehicleName}\nðŸ“… ${tx.startLabel} - ${tx.endLabel}\nðŸ’° â‚¬ ${euro(tx.amount)}\n\n${contractUrl ? `ðŸ“„ Contratto:\n${contractUrl}\n\n` : ''}Grazie da Trasporti DP.`
     });
   } catch (e) {
     console.error('Errore invio pagamento cliente:', e.message);
@@ -623,7 +623,7 @@ async function notifyPayment(tx) {
 // =========================
 // ROUTES
 // =========================
-app.get('/', (req, res) => res.send('Server DP Rent attivo ✅'));
+app.get('/', (req, res) => res.send('Server DP Rent attivo âœ…'));
 app.get('/health', (req, res) => res.json({ ok: true, service: 'dp-rent', time: new Date().toISOString() }));
 
 app.get('/contratto/:codice', (req, res) => {
@@ -644,7 +644,19 @@ app.get('/nexi/result', async (req, res) => {
     console.error('Errore Nexi result:', e.message);
   }
   const contractUrl = codice && APP_BASE_URL ? `${APP_BASE_URL}/contratto/${encodeURIComponent(codice)}` : '';
-  res.send(`<html><head><meta charset="utf-8"></head><body style="font-family:Arial;text-align:center;padding:40px"><h1>Pagamento completato ✅</h1>${contractUrl ? `<p><a href="${contractUrl}" style="font-size:22px">Apri contratto</a></p>` : ''}<p>Grazie da Trasporti DP.</p></body></html>`);
+  res.send(`<html><head><meta charset="utf-8"></head><body style="font-family:Arial;text-align:center;padding:40px"><h1>Pagamento completato âœ…</h1>${contractUrl ? `<p><a href="${contractUrl}" style="font-size:22px">Apri contratto</a></p>` : ''}<p>Grazie da Trasporti DP.</p></body></html>`);
+});
+
+
+app.get('/debug/availability', async (req, res) => {
+  try {
+    const range = extractDateRange(`${req.query.start || ''}-${req.query.end || ''}`);
+    if (!range) return res.status(400).json({ ok: false, error: 'Usa ?start=22/05&end=22/05' });
+    const vehicles = await getAvailability(range.startDate, range.endDate);
+    res.json({ ok: true, start: range.startLabel, end: range.endLabel, vehicles });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 app.post('/nexi/notify', async (req, res) => {
@@ -699,7 +711,7 @@ async function handleWhatsApp(req, res) {
       return res.end(twiml.toString());
     }
 
-    // MENU SOLO quando stato è menu. NON intercetta "Auto/Furgone" durante domande.
+    // MENU SOLO quando stato Ã¨ menu. NON intercetta "Auto/Furgone" durante domande.
     if (session.state === 'menu') {
       const intent = detectIntent(body);
       if (!intent) {
@@ -716,7 +728,7 @@ async function handleWhatsApp(req, res) {
 
       if (session.intent === 'noleggio') {
         if (session.questionIndex === 1 && !extractDateRange(body)) {
-          twiml.message('Non riesco a leggere le date. Scrivile così: 10/05 - 15/05');
+          twiml.message('Non riesco a leggere le date. Scrivile cosÃ¬: 10/05 - 15/05');
           res.writeHead(200, { 'Content-Type': 'text/xml' });
           return res.end(twiml.toString());
         }
@@ -745,10 +757,10 @@ async function handleWhatsApp(req, res) {
         try {
           vehicles = await getAvailability(range.startDate, range.endDate);
         } catch (e) {
-          console.error('Errore disponibilità:', e.message);
+          console.error('Errore disponibilitÃ :', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message('Non riesco a leggere disponibilità dal gestionale. Mandami un’altra data oppure riprova tra poco.');
+          twiml.message('Non riesco a leggere disponibilitÃ  dal gestionale. Mandami unâ€™altra data oppure riprova tra poco.');
           res.writeHead(200, { 'Content-Type': 'text/xml' });
           return res.end(twiml.toString());
         }
@@ -756,7 +768,7 @@ async function handleWhatsApp(req, res) {
         if (!vehicles.length) {
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message('Non trovo disponibilità per queste date. Mandami un’altra data. Esempio: 18/05 - 20/05');
+          twiml.message('Non trovo disponibilitÃ  per queste date. Mandami unâ€™altra data. Esempio: 18/05 - 20/05');
           res.writeHead(200, { 'Content-Type': 'text/xml' });
           return res.end(twiml.toString());
         }
@@ -773,15 +785,15 @@ async function handleWhatsApp(req, res) {
           vehicles: vehicles.slice(0, 3)
         };
 
-        await sendInternal(INTERNAL_GENERAL_NUMBERS, `🔍 PREVENTIVO NOLEGGIO\n\n👤 ${profileName}\n📞 ${from}\n🚐 Richiesta: ${session.pending.requestedVehicle}\n📅 ${session.pending.startLabel} - ${session.pending.endLabel}\n🚗 Km: ${km}\n\n${session.pending.vehicles.map((v,i)=>`${i+1}) ${v.name} - € ${euro(v.estimatedTotalAmount)}`).join('\n')}`);
+        await sendInternal(INTERNAL_GENERAL_NUMBERS, `ðŸ” PREVENTIVO NOLEGGIO\n\nðŸ‘¤ ${profileName}\nðŸ“ž ${from}\nðŸš Richiesta: ${session.pending.requestedVehicle}\nðŸ“… ${session.pending.startLabel} - ${session.pending.endLabel}\nðŸš— Km: ${km}\n\n${session.pending.vehicles.map((v,i)=>`${i+1}) ${v.name} - â‚¬ ${euro(v.estimatedTotalAmount)}`).join('\n')}`);
 
-        twiml.message(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}️⃣ ${v.name}\n💰 € ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`);
+        twiml.message(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}ï¸âƒ£ ${v.name}\nðŸ’° â‚¬ ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`);
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
 
-      await sendInternal(session.intent === 'officina' ? INTERNAL_OFFICINA_NUMBERS : INTERNAL_GENERAL_NUMBERS, `🔔 NUOVA RICHIESTA ${session.intent.toUpperCase()}\n\n👤 ${profileName}\n📞 ${from}\n\n${session.answers.map((a,i)=>`${i+1}) ${a}`).join('\n')}`);
-      twiml.message(session.intent === 'officina' ? `Grazie ✅ Richiesta inviata all’officina.\nPuoi anche prenotare qui:\n${LINK_OFFICINA}` : 'Grazie ✅ Richiesta inviata allo staff. Ti ricontatteremo presto.');
+      await sendInternal(session.intent === 'officina' ? INTERNAL_OFFICINA_NUMBERS : INTERNAL_GENERAL_NUMBERS, `ðŸ”” NUOVA RICHIESTA ${session.intent.toUpperCase()}\n\nðŸ‘¤ ${profileName}\nðŸ“ž ${from}\n\n${session.answers.map((a,i)=>`${i+1}) ${a}`).join('\n')}`);
+      twiml.message(session.intent === 'officina' ? `Grazie âœ… Richiesta inviata allâ€™officina.\nPuoi anche prenotare qui:\n${LINK_OFFICINA}` : 'Grazie âœ… Richiesta inviata allo staff. Ti ricontatteremo presto.');
       clearSession(from);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
@@ -805,7 +817,7 @@ async function handleWhatsApp(req, res) {
       session.pending.contractQuestionIndex = 0;
       touch(session);
 
-      twiml.message(`Perfetto ${profileName} ✅\n\nHai scelto:\n🚐 ${selected.name}\n📅 ${session.pending.startLabel} - ${session.pending.endLabel}\n🚗 Km richiesti: ${session.pending.requestedKm} km\n💰 Preventivo gestionale: € ${euro(session.pending.prezzoFinale)}\n\n✍️ Ora inseriamo i dati per il contratto.\n\n${session.pending.contractQuestions[0]}`);
+      twiml.message(`Perfetto ${profileName} âœ…\n\nHai scelto:\nðŸš ${selected.name}\nðŸ“… ${session.pending.startLabel} - ${session.pending.endLabel}\nðŸš— Km richiesti: ${session.pending.requestedKm} km\nðŸ’° Preventivo gestionale: â‚¬ ${euro(session.pending.prezzoFinale)}\n\nâœï¸ Ora inseriamo i dati per il contratto.\n\n${session.pending.contractQuestions[0]}`);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -815,7 +827,13 @@ async function handleWhatsApp(req, res) {
       const qs = session.pending.contractQuestions || contractQuestions();
 
       if (idx === 18 && !yesNo(body)) {
-        twiml.message('Rispondimi solo SÌ oppure NO.');
+        twiml.message('Rispondimi solo SÃŒ oppure NO.');
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
+      if (idx === 4 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body)) {
+        twiml.message('Email non valida. Scrivila cosÃ¬: nome@email.it');
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
       }
@@ -839,7 +857,7 @@ async function handleWhatsApp(req, res) {
       session.state = 'confirm_noleggio';
       touch(session);
 
-      twiml.message(`Controlla i dati contratto:\n\n${contractSummary(session.pending.contractData)}\n\n🚐 Mezzo: ${session.pending.selectedVehicle.name}\n📅 ${session.pending.startLabel} - ${session.pending.endLabel}\n💰 € ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`);
+      twiml.message(`Controlla i dati contratto:\n\n${contractSummary(session.pending.contractData)}\n\nðŸš Mezzo: ${session.pending.selectedVehicle.name}\nðŸ“… ${session.pending.startLabel} - ${session.pending.endLabel}\nðŸ’° â‚¬ ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       return res.end(twiml.toString());
     }
@@ -860,28 +878,31 @@ async function handleWhatsApp(req, res) {
         return res.end(twiml.toString());
       }
 
+      // FIX: non faccio piÃ¹ un secondo controllo disponibilitÃ  con confronto codice.
+      // MyAppy puÃ² restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
+      // Provo direttamente a prenotare il mezzo scelto dall'utente.
       let reservation;
       try {
         reservation = await createReservation(session, from);
       } catch (e) {
-        console.error('❌ ERRORE PRENOTAZIONE:', e.message);
+        console.error('âŒ ERRORE PRENOTAZIONE:', e.message);
         try {
           const fresh = await getAvailability(session.pending.startDate, session.pending.endDate);
           session.pending.vehicles = fresh.filter(v => v.code !== session.pending.selectedVehicle.code).slice(0, 3);
           session.state = 'vehicle_choice';
           if (session.pending.vehicles.length) {
-            twiml.message(`⚠️ Il mezzo scelto non è più disponibile.\n\nTi mostro alternative aggiornate:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}️⃣ ${v.name}\n💰 € ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`);
+            twiml.message(`âš ï¸ Il mezzo scelto non Ã¨ piÃ¹ disponibile.\n\nTi mostro alternative aggiornate:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}ï¸âƒ£ ${v.name}\nðŸ’° â‚¬ ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`);
           } else {
             session.state = 'questions';
             session.questionIndex = 1;
             session.answers = [session.pending.requestedVehicle];
-            twiml.message('⚠️ Il mezzo non è più disponibile e non trovo alternative. Mandami un’altra data.');
+            twiml.message('âš ï¸ Il mezzo non Ã¨ piÃ¹ disponibile e non trovo alternative. Mandami unâ€™altra data.');
           }
         } catch (_) {
           session.state = 'questions';
           session.questionIndex = 1;
           session.answers = [session.pending.requestedVehicle];
-          twiml.message('⚠️ Il mezzo non è più disponibile. Mandami un’altra data e riprovo.');
+          twiml.message('âš ï¸ Il mezzo non Ã¨ piÃ¹ disponibile. Mandami unâ€™altra data e riprovo.');
         }
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         return res.end(twiml.toString());
@@ -892,8 +913,8 @@ async function handleWhatsApp(req, res) {
         const upd = await updateReservationData(reservation.id, session.pending.contractData);
         updateId = upd?.result?.client_reservation_update?.uid || upd?.client_reservation_update?.uid || '';
       } catch (e) {
-        console.error('⚠️ ERRORE UPDATE ANAGRAFICA:', e.message);
-        await sendInternal(INTERNAL_GENERAL_NUMBERS, `⚠️ ERRORE UPDATE ANAGRAFICA\n\n👤 ${profileName}\n📞 ${from}\n🧾 Prenotazione: ${reservation.id || '-'}\nErrore: ${e.message}`);
+        console.error('âš ï¸ ERRORE UPDATE ANAGRAFICA:', e.message);
+        await sendInternal(INTERNAL_GENERAL_NUMBERS, `âš ï¸ ERRORE UPDATE ANAGRAFICA\n\nðŸ‘¤ ${profileName}\nðŸ“ž ${from}\nðŸ§¾ Prenotazione: ${reservation.id || '-'}\nErrore: ${e.message}`);
       }
 
       let paymentLink = '';
@@ -919,13 +940,13 @@ async function handleWhatsApp(req, res) {
             contractData: session.pending.contractData
           };
         } catch (e) {
-          console.error('❌ ERRORE NEXI:', e.message);
+          console.error('âŒ ERRORE NEXI:', e.message);
         }
       }
 
-      await sendInternal(INTERNAL_GENERAL_NUMBERS, `✅ PRENOTAZIONE NOLEGGIO CONFERMATA\n\n👤 ${profileName}\n📞 ${from}\n🚐 ${session.pending.selectedVehicle.name}\n📅 ${session.pending.startLabel} - ${session.pending.endLabel}\n💰 € ${euro(session.pending.prezzoFinale)}\n🧾 Prenotazione: ${reservation.id || '-'}\n📝 Update anagrafica: ${updateId || '-'}\n\n${contractSummary(session.pending.contractData)}${paymentLink ? `\n\nLink Nexi: ${paymentLink}` : ''}`);
+      await sendInternal(INTERNAL_GENERAL_NUMBERS, `âœ… PRENOTAZIONE NOLEGGIO CONFERMATA\n\nðŸ‘¤ ${profileName}\nðŸ“ž ${from}\nðŸš ${session.pending.selectedVehicle.name}\nðŸ“… ${session.pending.startLabel} - ${session.pending.endLabel}\nðŸ’° â‚¬ ${euro(session.pending.prezzoFinale)}\nðŸ§¾ Prenotazione: ${reservation.id || '-'}\nðŸ“ Update anagrafica: ${updateId || '-'}\n\n${contractSummary(session.pending.contractData)}${paymentLink ? `\n\nLink Nexi: ${paymentLink}` : ''}`);
 
-      twiml.message(`Grazie ${profileName} ✅\n\n🚐 Mezzo scelto: ${session.pending.selectedVehicle.name}\n📅 Periodo: dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)\n🚗 Km richiesti: ${session.pending.requestedKm} km\n💰 Preventivo gestionale: € ${euro(session.pending.prezzoFinale)}\n🧾 Prenotazione gestionale: ${reservation.id || '-'}\n📌 Stato gestionale: ${reservation.status || '-'}\n\nPuoi pagare il solo costo del noleggio qui:\n${paymentLink || 'Ti invieremo il link pagamento appena pronto.'}\n\nLa caparra di € ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} verrà gestita separatamente dal nostro staff.`);
+      twiml.message(`Grazie ${profileName} âœ…\n\nðŸš Mezzo scelto: ${session.pending.selectedVehicle.name}\nðŸ“… Periodo: dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)\nðŸš— Km richiesti: ${session.pending.requestedKm} km\nðŸ’° Preventivo gestionale: â‚¬ ${euro(session.pending.prezzoFinale)}\nðŸ§¾ Prenotazione gestionale: ${reservation.id || '-'}\nðŸ“Œ Stato gestionale: ${reservation.status || '-'}\n\nPuoi pagare il solo costo del noleggio qui:\n${paymentLink || 'Ti invieremo il link pagamento appena pronto.'}\n\nLa caparra di â‚¬ ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} verrÃ  gestita separatamente dal nostro staff.`);
 
       clearSession(from);
       res.writeHead(200, { 'Content-Type': 'text/xml' });
@@ -938,8 +959,8 @@ async function handleWhatsApp(req, res) {
     return res.end(twiml.toString());
 
   } catch (e) {
-    console.error('❌ ERRORE GENERALE:', e);
-    twiml.message('Scusaci, si è verificato un problema tecnico. Scrivi menu e riprova.');
+    console.error('âŒ ERRORE GENERALE:', e);
+    twiml.message('Scusaci, si Ã¨ verificato un problema tecnico. Scrivi menu e riprova.');
     res.writeHead(200, { 'Content-Type': 'text/xml' });
     return res.end(twiml.toString());
   }
@@ -949,4 +970,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent COMPLETO avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent FIX BOOKING avviato sulla porta ${PORT}`));

@@ -54,6 +54,63 @@ const NEXI_TIMEOUT_HOURS = Number(process.env.NEXI_TIMEOUT_HOURS || 4);
 const NEXI_BASE_URL = NEXI_ENV === 'test' ? 'https://int-ecommerce.nexi.it' : 'https://ecommerce.nexi.it';
 const NEXI_PAYMAIL_ENDPOINT = `${NEXI_BASE_URL}/ecomm/api/bo/richiestaPayMail`;
 
+const VEHICLE_CATALOG = [
+  {
+    "uid": "94970631",
+    "code": "F2-PC",
+    "description": "Furgone-Merci-Manuale-Diesel | Iveco Daily o similare",
+    "model": "IVECO DAILY"
+  },
+  {
+    "uid": "58724774",
+    "code": "A2 - Compact",
+    "description": "Gruppo Auto - Compact | VW Golf o similare",
+    "model": "VOLKSWAGEN GOLF  VI 1.6 TDI ADVANCE"
+  },
+  {
+    "uid": "24630557",
+    "code": "X-ESC",
+    "description": "Escavatore Volvo/Toucan",
+    "model": "VOLVO EC13"
+  },
+  {
+    "uid": "19232792",
+    "code": "P2-9P",
+    "description": "Furgone-Persone-Manuale-Diesel | Ford Transit o similare",
+    "model": "Ford Transit"
+  },
+  {
+    "uid": "96753956",
+    "code": "F1-VAN",
+    "description": "Cargo | Fiat Scudo o similare",
+    "model": "FIAT FIORINO"
+  },
+  {
+    "uid": "45826265",
+    "code": "A1 - Compact Eco",
+    "description": "Gruppo Auto - Compact Eco | Dacia Sandero o similare",
+    "model": "DACIA DACIA SANDERO"
+  },
+  {
+    "uid": "68030919",
+    "code": "A3-Compact Elite",
+    "description": "Gruppo Auto - Compact Elite | Ford Kuga o similare",
+    "model": "NISSAN NV200 EVALIA"
+  },
+  {
+    "uid": "34793575",
+    "code": "P1-8P",
+    "description": "Furgone-Persone-Manuale-Diesel | Ford Tourneo 8px o similare",
+    "model": "Ford Tourneo"
+  },
+  {
+    "uid": "88605344",
+    "code": "F3-PL",
+    "description": "Furgone-Merci-Manuale-Diesel | Iveco Daily o similare",
+    "model": "Iveco Daily"
+  }
+];
+
 // =========================
 // MEMORIA
 // =========================
@@ -195,6 +252,31 @@ function findFirst(obj, keys) {
     if (f) return f;
   }
   return null;
+}
+
+
+function normVehicleCode(v) {
+  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[–—]/g, '-').trim();
+}
+
+function catalogByCode(code) {
+  const n = normVehicleCode(code);
+  return VEHICLE_CATALOG.find(v => normVehicleCode(v.code) === n) || null;
+}
+
+function vehicleMatchesRequest(vehicle, requestText) {
+  const q = normalize(requestText);
+  const code = normVehicleCode(vehicle.code);
+  const name = normalize(`${vehicle.name || ''} ${vehicle.description || ''}`);
+  if (q.includes('auto') || q.includes('macchina') || q.includes('vettura')) return code.startsWith('A') || name.includes('auto') || name.includes('compact');
+  if (q.includes('furgone') || q.includes('van') || q.includes('merci') || q.includes('cargo')) return code.startsWith('F') || name.includes('furgone') || name.includes('cargo') || name.includes('merci');
+  if (q.includes('pulmino') || q.includes('persone') || q.includes('posti') || q.includes('9') || q.includes('8')) return code.startsWith('P') || name.includes('persone') || name.includes('posti') || name.includes('tourneo');
+  return true;
+}
+
+function filterVehiclesByRequest(vehicles, requestText) {
+  const filtered = vehicles.filter(v => vehicleMatchesRequest(v, requestText));
+  return filtered.length ? filtered : vehicles;
 }
 
 function buildOrderId(prefix = 'DP') {
@@ -434,8 +516,18 @@ function vehicleFromAvail(item) {
   let name = cleanText(vehicle?.['@_Description'] || vehicle?.['@_Name'] || mm?.['@_Name'] || code || 'Veicolo disponibile');
   if (code && !name.toLowerCase().includes(code.toLowerCase())) name = `${name} (${code})`;
   const total = core?.TotalCharge || item?.TotalCharge || {};
-  const amount = Number(total?.['@_EstimatedTotalAmount'] || total?.['@_RateTotalAmount'] || 0);
-  return { code, name, estimatedTotalAmount: amount, raw: item };
+  const rateTotalAmount = Number(total?.['@_RateTotalAmount'] || 0);
+  const estimatedTotalAmount = Number(total?.['@_EstimatedTotalAmount'] || rateTotalAmount || 0);
+  const cat = catalogByCode(code);
+  return {
+    uid: cat?.uid || '',
+    code,
+    name: cat?.description ? `${cat.description} (${code})` : name,
+    description: cat?.description || '',
+    rateTotalAmount,
+    estimatedTotalAmount,
+    raw: item
+  };
 }
 
 async function getAvailability(startDate, endDate) {
@@ -465,8 +557,8 @@ async function createReservation(session, from) {
   const c = p.contractData || {};
   const selected = p.selectedVehicle;
   const amount = Number(p.prezzoFinale || selected.estimatedTotalAmount || 0);
-  const net = amount / (1 + IVA_RATE);
-  const tax = amount - net;
+  const net = Number(selected.rateTotalAmount || (amount / (1 + IVA_RATE)));
+  const tax = Math.max(0, amount - net);
   const phone = c.phone || String(from).replace('whatsapp:', '');
   const email = c.email || 'cliente@trasportidp.com';
 
@@ -481,7 +573,7 @@ async function createReservation(session, from) {
 <VehRentalCore PickUpDateTime="${toOtaStart(p.startDate)}" ReturnDateTime="${toOtaEnd(p.endDate)}">
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore>
-<VehPref><VehMakeModel Code="${xmlEscape(selected.code)}" Name=""/></VehPref>
+<VehPref><VehMakeModel Code="${xmlEscape(selected.code)}" Name="${xmlEscape(selected.description || selected.name || '')}"/></VehPref>
 <Customer>
 <Primary BirthDate="${xmlEscape(c.date_of_birth || '')}">
 <PersonName><GivenName>${xmlEscape(c.first_name || '')}</GivenName><Surname>${xmlEscape(c.name || '')}</Surname></PersonName>
@@ -792,7 +884,7 @@ async function handleWhatsApp(req, res) {
 
         let vehicles = [];
         try {
-          vehicles = await getAvailability(range.startDate, range.endDate);
+          vehicles = filterVehiclesByRequest(await getAvailability(range.startDate, range.endDate), session.answers[0]);
         } catch (e) {
           console.error('Errore disponibilità:', e.message);
           session.questionIndex = 1;
@@ -922,25 +1014,31 @@ async function handleWhatsApp(req, res) {
       try {
         reservation = await createReservation(session, from);
       } catch (e) {
-        console.error('❌ ERRORE PRENOTAZIONE:', e.message);
-        try {
-          const fresh = await getAvailability(session.pending.startDate, session.pending.endDate);
-          session.pending.vehicles = fresh.filter(v => v.code !== session.pending.selectedVehicle.code).slice(0, 3);
-          session.state = 'vehicle_choice';
-          if (session.pending.vehicles.length) {
-            twiml.message(safeWhatsAppText(`Il gestionale ha rifiutato la prenotazione.\n\nScegli un altro mezzo oppure scrivi menu:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}️⃣ ${v.name}\n💰 EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`));
-          } else {
-            session.state = 'questions';
-            session.questionIndex = 1;
-            session.answers = [session.pending.requestedVehicle];
-            twiml.message(safeWhatsAppText('⚠️ Il gestionale ha rifiutato la prenotazione e non trovo alternative. Mandami un’altra data.'));
-          }
-        } catch (_) {
-          session.state = 'questions';
-          session.questionIndex = 1;
-          session.answers = [session.pending.requestedVehicle];
-          twiml.message(safeWhatsAppText('⚠️ Il gestionale ha rifiutato la prenotazione. Mandami un’altra data e riprovo.'));
-        }
+        console.error('ERRORE PRENOTAZIONE GESTIONALE:', e.message);
+        await sendInternal(
+          INTERNAL_GENERAL_NUMBERS,
+          `ERRORE PRENOTAZIONE GESTIONALE
+
+` +
+          `Cliente: ${profileName}
+` +
+          `Telefono: ${from}
+` +
+          `Mezzo: ${session.pending.selectedVehicle?.name || '-'}
+` +
+          `Codice mezzo: ${session.pending.selectedVehicle?.code || '-'}
+` +
+          `UID mezzo csv: ${session.pending.selectedVehicle?.uid || '-'}
+` +
+          `Periodo: ${session.pending.startLabel} - ${session.pending.endLabel}
+` +
+          `Errore reale: ${e.message}`
+        );
+        twiml.message(safeWhatsAppText(`Il gestionale ha rifiutato la prenotazione.
+
+Errore reale: ${e.message}
+
+Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
       }
@@ -1007,4 +1105,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent PULITO avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent CATALOGO VEICOLI avviato sulla porta ${PORT}`));

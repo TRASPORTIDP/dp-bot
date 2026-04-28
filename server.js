@@ -730,23 +730,57 @@ app.post('/whatsapp', async (req, res) => {
 
     if (session.state === 'vehicle_choice') {
       if (isBackCommand(incomingText) || isAnotherDateCommand(incomingText)) {
-        session.state = 'questions'; session.questionIndex = 1; session.answers = [session.pendingOptions?.requestedVehicle || session.answers[0]]; session.pendingOptions = null; session.createdAt = Date.now();
+        session.state = 'questions';
+        session.questionIndex = 1;
+        session.answers = [session.pendingOptions?.requestedVehicle || session.answers[0]];
+        session.pendingOptions = null;
+        session.createdAt = Date.now();
         twiml.message(`Va bene.\n\nMandami pure le date del noleggio.\n\n${session.questions[1]}`);
-        res.writeHead(200, { 'Content-Type': 'text/xml' }); return res.end(twiml.toString());
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
       }
+
       const validation = validateAnswer(session, incomingText);
-      if (!validation.valid) { twiml.message(validation.message); res.writeHead(200, { 'Content-Type': 'text/xml' }); return res.end(twiml.toString()); }
+      if (!validation.valid) {
+        twiml.message(validation.message);
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
       const idx = parseInt(normalize(incomingText), 10) - 1;
       const options = session.pendingOptions?.vehicles || [];
       const selected = options[idx];
-      if (!selected) { twiml.message('Scelta non valida.\n\nScrivimi 1, 2 oppure 3.\nSe vuoi cambiare, scrivi indietro oppure altra data.'); res.writeHead(200, { 'Content-Type': 'text/xml' }); return res.end(twiml.toString()); }
+
+      if (!selected) {
+        twiml.message('Scelta non valida.\n\nScrivimi 1, 2 oppure 3.\nSe vuoi cambiare, scrivi indietro oppure altra data.');
+        res.writeHead(200, { 'Content-Type': 'text/xml' });
+        return res.end(twiml.toString());
+      }
+
       const prezzoFinale = Number(selected.estimatedTotalAmount || 0);
-      session.state = 'confirm_noleggio';
+
+      // FIX DEFINITIVO: prima raccoglie i dati contratto, poi crea prenotazione e pagamento.
+      session.state = 'contract_data';
       session.pendingOptions.selectedVehicle = selected;
       session.pendingOptions.prezzoFinale = prezzoFinale;
+      session.pendingOptions.contractQuestions = buildContractQuestions();
+      session.pendingOptions.contractAnswers = [];
+      session.pendingOptions.contractQuestionIndex = 0;
       session.createdAt = Date.now();
-      twiml.message(`Perfetto ${profileName} ✅\n\nHai scelto:\n🚐 ${selected.name}${selected.code ? ` (${selected.code})` : ''}\n📅 Dal ${session.pendingOptions.startLabel} al ${session.pendingOptions.endLabel}\n🚗 Km richiesti: ${session.pendingOptions.requestedKm} km\n💰 Preventivo gestionale: € ${formatEuroNumber(prezzoFinale)}\n\nConfermi la prenotazione?\nRispondi *SI* per confermare oppure *NO* per annullare.`);
-      res.writeHead(200, { 'Content-Type': 'text/xml' }); return res.end(twiml.toString());
+
+      twiml.message(
+        `Perfetto ${profileName} ✅\n\n` +
+        `Hai scelto:\n` +
+        `🚐 ${selected.name}${selected.code ? ` (${selected.code})` : ''}\n` +
+        `📅 Dal ${session.pendingOptions.startLabel} al ${session.pendingOptions.endLabel}\n` +
+        `🚗 Km richiesti: ${session.pendingOptions.requestedKm} km\n` +
+        `💰 Preventivo gestionale: € ${formatEuroNumber(prezzoFinale)}\n\n` +
+        `✍️ Ora inseriamo i dati per il contratto.\n\n` +
+        `${session.pendingOptions.contractQuestions[0]}`
+      );
+
+      res.writeHead(200, { 'Content-Type': 'text/xml' });
+      return res.end(twiml.toString());
     }
 
     if (session.state === 'contract_data') {

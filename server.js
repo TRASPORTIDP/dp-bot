@@ -202,6 +202,8 @@ function isIsoDateStrict(value) {
   const s = isoDate(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const parts = s.split('-').map(Number);
+  const year = parts[0];
+  if (year < 1900 || year > 2100) return false;
   const dt = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
   return dt.getFullYear() === parts[0] && dt.getMonth() === parts[1] - 1 && dt.getDate() === parts[2];
 }
@@ -272,7 +274,7 @@ function findFirst(obj, keys) {
 
 
 function normVehicleCode(v) {
-  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[–—]/g, '-').trim();
+  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[ââ]/g, '-').trim();
 }
 
 function catalogByCode(code) {
@@ -463,7 +465,7 @@ function questionsFor(intent) {
   if (intent === 'vendita') return ['Che tipo di auto cerchi?', 'Budget indicativo?', 'Hai permuta?'];
   if (intent === 'trasporto') return ['Che veicolo devi trasportare?', 'Da dove ritirare?', 'Dove consegnare?', 'Quando ti serve?'];
   if (intent === 'contatto') return ['Scrivimi brevemente il motivo della richiesta.'];
-  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sì/no', 'Hai bisogno di acqua? sì/no'];
+  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sÃ¬/no', 'Hai bisogno di acqua? sÃ¬/no'];
   return [];
 }
 
@@ -499,10 +501,10 @@ function contractQuestions() {
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
-    'Città?',
+    'CittÃ ?',
     'Provincia? Esempio: TR',
     'CAP?',
-    'Numero documento / carta identità?',
+    'Numero documento / carta identitÃ ?',
     'Ente rilascio documento? Esempio: Comune di Terni',
     'Data rilascio documento? Esempio: 16/01/2020',
     'Scadenza documento? Esempio: 15/01/2028',
@@ -511,7 +513,7 @@ function contractQuestions() {
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
     'Fatturazione PRIVATO o AZIENDA?',
-    'C’è un secondo autista? Rispondi SÌ oppure NO.'
+    'CâÃ¨ un secondo autista? Rispondi SÃ oppure NO.'
   ];
 }
 
@@ -668,12 +670,12 @@ async function getAvailability(startDate, endDate) {
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore></VehAvailRQCore></ns1:OTA_VehAvailRateRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('📤 OTA_VehAvailRateRQ:', xml);
+  console.log('ð¤ OTA_VehAvailRateRQ:', xml);
   const r = await fetch(CARRENTAL_AVAIL_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('📥 OTA_VehAvailRateRS:', text);
+  console.log('ð¥ OTA_VehAvailRateRS:', text);
 
-  if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
+  if (!r.ok) throw new Error(`HTTP disponibilitÃ  ${r.status}`);
   const parsed = xmlParser.parse(text);
   const otaError = extractOtaErrorText(parsed) || extractOtaErrorText(text);
   if (otaError) throw new Error(otaError);
@@ -846,7 +848,6 @@ async function updateReservationData(reservationId, contractData) {
 
   const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
   if (CRS_API_KEY) {
-    headers.Authorization = `Bearer ${CRS_API_KEY}`;
     headers['X-API-Key'] = CRS_API_KEY;
     headers.apiKey = CRS_API_KEY;
   }
@@ -854,19 +855,47 @@ async function updateReservationData(reservationId, contractData) {
     headers['X-Broker-ID'] = CRS_BROKER_ID;
     headers.broker_id = CRS_BROKER_ID;
   }
+  if (CRS_BROKER_ID && CRS_API_KEY) {
+    headers.Authorization = 'Basic ' + Buffer.from(`${CRS_BROKER_ID}:${CRS_API_KEY}`).toString('base64');
+  } else if (CRS_API_KEY) {
+    headers.Authorization = `Bearer ${CRS_API_KEY}`;
+  }
 
-  console.log('📤 CRS UPDATE URL:', url);
-  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+  console.log('ð¤ CRS UPDATE URL:', url);
+  console.log('ð¤ CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
 
-  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  console.log('📥 CRS UPDATE RISPOSTA:', JSON.stringify(data, null, 2));
+  async function doCrsPost(bodyPayload, label) {
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(bodyPayload) });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    console.log(`ð¥ CRS UPDATE RISPOSTA ${label}:`, JSON.stringify(data, null, 2));
+    return { r, text, data };
+  }
 
-  if (!r.ok) throw new Error(`HTTP CRS ${r.status}: ${text}`);
-  if (data.success === false) throw new Error(data.error || data.message || 'Update anagrafica fallito');
-  return data;
+  let result = await doCrsPost(payload, '1');
+
+  const authFailed =
+    result.data?.error === '_A0001/4' ||
+    String(result.data?.message || result.text || '').toLowerCase().includes('password sbagliata') ||
+    String(result.data?.message || result.text || '').toLowerCase().includes('nome utente');
+
+  if (authFailed && CRS_BROKER_ID && CRS_API_KEY) {
+    const payloadWithAuth = {
+      uid: CRS_BROKER_ID,
+      username: CRS_BROKER_ID,
+      broker_id: CRS_BROKER_ID,
+      api_key: CRS_API_KEY,
+      password: CRS_API_KEY,
+      message_password: CRS_API_KEY,
+      ...payload
+    };
+    result = await doCrsPost(payloadWithAuth, '2_CON_AUTH_NEL_BODY');
+  }
+
+  if (!result.r.ok) throw new Error(`HTTP CRS ${result.r.status}: ${result.text}`);
+  if (result.data.success === false) throw new Error(result.data.error || result.data.message || 'Update anagrafica fallito');
+  return result.data;
 }
 
 // =========================
@@ -898,14 +927,13 @@ async function createNexiLink(amount, description, from, baseUrl) {
     mac: nexiMac({ apiKey: NEXI_ALIAS, codiceTransazione, importo, timeStamp }),
     timeout: String(NEXI_TIMEOUT_HOURS),
     url: `${callbackBase}/nexi/result`,
-    urlpost: `${callbackBase}/nexi/notify`,
     parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
 
-  console.log('📤 NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
+  console.log('ð¤ NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
   const r = await fetch(NEXI_PAYMAIL_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
-  console.log('📥 NEXI:', data);
+  console.log('ð¥ NEXI:', data);
 
   if (!r.ok) throw new Error(`HTTP Nexi ${r.status}`);
   if (data.esito !== 'OK') throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || 'Errore Nexi');
@@ -957,7 +985,7 @@ Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || 
 Giorni: ${session.pending?.days || '-'}
 Km richiesti: ${session.pending?.requestedKm || '-'}
 
-La richiesta è arrivata al bot DP Rent.`
+La richiesta Ã¨ arrivata al bot DP Rent.`
     );
   } catch (e) {
     console.error('ERRORE NOTIFICA PREVENTIVO:', e.message);
@@ -1101,7 +1129,7 @@ async function handleWhatsApp(req, res) {
         try {
           vehicles = filterVehiclesByRequest(await getAvailability(range.startDate, range.endDate), session.answers[0]);
         } catch (e) {
-          console.error('Errore disponibilità:', e.message);
+          console.error('Errore disponibilitÃ :', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
           await sendInternal(INTERNAL_GENERAL_NUMBERS, `ERRORE DISPONIBILITA NOLEGGIO
@@ -1121,7 +1149,7 @@ Errore: ${e.message}`);
         if (!vehicles.length) {
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non trovo disponibilità per queste date. Mandami un’altra data. Esempio: 18/05 - 20/05'));
+          twiml.message(safeWhatsAppText('Non trovo disponibilitÃ  per queste date. Mandami unâaltra data. Esempio: 18/05 - 20/05'));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1140,7 +1168,7 @@ Errore: ${e.message}`);
 
         await sendInternal(INTERNAL_GENERAL_NUMBERS, ` PREVENTIVO NOLEGGIO\n\n ${profileName}\n ${from}\n Richiesta: ${session.pending.requestedVehicle}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n Km: ${km}\n\n${session.pending.vehicles.map((v,i)=>`${i+1}) ${v.name} - EUR ${euro(v.estimatedTotalAmount)}`).join('\n')}`);
 
-        twiml.message(safeWhatsAppText(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}️⃣ ${v.name}\n EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`));
+        twiml.message(safeWhatsAppText(`Ho trovato questi mezzi disponibili:\n\n${session.pending.vehicles.map((v,i)=>`${i+1}ï¸â£ ${v.name}\n EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}\n\nScrivi 1, 2 oppure 3.`));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
       }
@@ -1240,7 +1268,7 @@ Errore: ${e.message}`);
             'Codice SDI? Se non presente scrivi NO.',
             'Referente aziendale?',
             'Indirizzo fatturazione azienda?',
-            'Città fatturazione?',
+            'CittÃ  fatturazione?',
             'Provincia fatturazione? Esempio: TR',
             'CAP fatturazione?'
           );
@@ -1285,8 +1313,8 @@ Errore: ${e.message}`);
         return res.end(twiml.toString());
       }
 
-      // FIX: non faccio più un secondo controllo disponibilità con confronto codice.
-      // MyAppy può restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
+      // FIX: non faccio piÃ¹ un secondo controllo disponibilitÃ  con confronto codice.
+      // MyAppy puÃ² restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
       // Provo direttamente a prenotare il mezzo scelto dall'utente.
       let reservation;
       try {
@@ -1370,14 +1398,14 @@ ${EMO.cal} *Periodo*
 Dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)
 
 ${EMO.road} *Km richiesti:* ${session.pending.requestedKm} km
-${EMO.money} *Totale noleggio:* € ${euro(session.pending.prezzoFinale)}
+${EMO.money} *Totale noleggio:* â¬ ${euro(session.pending.prezzoFinale)}
 
 ${EMO.doc} *Prenotazione gestionale:* ${reservation.id || '-'}
 ${EMO.pin} *Stato:* ${reservation.status || '-'}
 
 ${paymentLink ? `${EMO.card} *Pagamento online*\n${paymentLink}` : `${EMO.warn} Link pagamento non generato. Ti invieremo il link appena pronto.`}
 
-${EMO.money} Caparra € ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+${EMO.money} Caparra â¬ ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
 
 *DP RENT*`));
 
@@ -1404,7 +1432,9 @@ app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server DP Rent FIX AZIENDA NOTIFICHE avviato sulla porta ${PORT}`);
+  console.log(`Server DP Rent FIX CRS NEXI DATE avviato sulla porta ${PORT}`);
   console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
   console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
+  console.log('CRS API base:', CRS_API_BASE_URL);
+  console.log('CRS auth presenti:', Boolean(CRS_BROKER_ID), Boolean(CRS_API_KEY));
 });

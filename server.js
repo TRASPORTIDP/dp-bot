@@ -274,7 +274,7 @@ function findFirst(obj, keys) {
 
 
 function normVehicleCode(v) {
-  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[–—]/g, '-').trim();
+  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[ââ]/g, '-').trim();
 }
 
 function catalogByCode(code) {
@@ -373,27 +373,20 @@ function isDuplicateSid(sid) {
 
 function safeWhatsAppText(text) {
   let s = String(text || '').normalize('NFC');
-
-  // pulizia caratteri rotti da encoding/emoji
   s = s
-    .replace(/[�]/g, '')
-    .replace(/ðŸ[^\s]*/g, '')
-    .replace(/ï¸\S*/g, '')
-    .replace(/âƒ£/g, '')
-    .replace(/â‚¬/g, 'EUR')
-    .replace(/âœ…/g, 'OK')
-    .replace(/âš[^\s]*/g, 'ATTENZIONE')
-    .replace(/EUR+/g, 'EUR');
-
-  // rimuove emoji vere per evitare mojibake su Twilio/WhatsApp
-  try {
-    s = s.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
-  } catch (_) {}
-
-  return s
+    .replace(/[ï¿½]/g, '')
+    .replace(/Ã°Å¸[^\s]*/g, '')
+    .replace(/Ã¯Â¸\S*/g, '')
+    .replace(/Ã¢ÆÂ£/g, '')
+    .replace(/Ã¢âÂ¬/g, 'EUR')
+    .replace(/Ã¢Åâ¦/g, 'OK')
+    .replace(/Ã¢Å¡[^\s]*/g, 'ATTENZIONE')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/â¬+/g, 'EUR')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  return s;
 }
 
 const EMO = {
@@ -451,20 +444,17 @@ function touch(session) { session.createdAt = Date.now(); }
 // =========================
 function menuText(name) {
   return `*DP RENT*
-━━━━━━━━━━━━━━
 
-Ciao *${name || 'Cliente'}*.
+Ciao ${name || 'Cliente'}, scegli il servizio:
 
-Scegli il servizio:
+*1* - Officina
+*2* - Noleggio
+*3* - Vendita auto
+*4* - Trasporto veicoli
+*5* - Contatto diretto
+*6* - Parcheggio / Sosta
 
-*1*  Officina
-*2*  Noleggio
-*3*  Vendita auto
-*4*  Trasporto veicoli
-*5*  Contatto diretto
-*6*  Parcheggio / Sosta
-
-Rispondi solo con il numero.
+Scrivi solo il numero.
 Esempio: *2*`;
 }
 
@@ -485,7 +475,7 @@ function questionsFor(intent) {
   if (intent === 'vendita') return ['Che tipo di auto cerchi?', 'Budget indicativo?', 'Hai permuta?'];
   if (intent === 'trasporto') return ['Che veicolo devi trasportare?', 'Da dove ritirare?', 'Dove consegnare?', 'Quando ti serve?'];
   if (intent === 'contatto') return ['Scrivimi brevemente il motivo della richiesta.'];
-  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sì/no', 'Hai bisogno di acqua? sì/no'];
+  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sÃ¬/no', 'Hai bisogno di acqua? sÃ¬/no'];
   return [];
 }
 
@@ -516,7 +506,7 @@ function vehiclesListText(vehicles) {
 ${vehicles.map((v, i) => `*${i + 1}* - ${v.name}
 Totale: EUR ${euro(v.estimatedTotalAmount)}`).join('\n\n')}
 
-Scrivi il numero del mezzo scelto.`;
+Scrivi 1, 2 oppure 3.`;
 }
 
 // =========================
@@ -531,10 +521,10 @@ function contractQuestions() {
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
-    'Città?',
+    'CittÃ ?',
     'Provincia? Esempio: TR',
     'CAP?',
-    'Numero documento / carta identità?',
+    'Numero documento / carta identitÃ ?',
     'Ente rilascio documento? Esempio: Comune di Terni',
     'Data rilascio documento? Esempio: 16/01/2020',
     'Scadenza documento? Esempio: 15/01/2028',
@@ -543,7 +533,7 @@ function contractQuestions() {
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
     'Fatturazione PRIVATO o AZIENDA?',
-    'C’è un secondo autista? Rispondi SÌ oppure NO.'
+    'CâÃ¨ un secondo autista? Rispondi SÃ oppure NO.'
   ];
 }
 
@@ -700,12 +690,12 @@ async function getAvailability(startDate, endDate) {
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore></VehAvailRQCore></ns1:OTA_VehAvailRateRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('📤 OTA_VehAvailRateRQ:', xml);
+  console.log('ð¤ OTA_VehAvailRateRQ:', xml);
   const r = await fetch(CARRENTAL_AVAIL_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('📥 OTA_VehAvailRateRS:', text);
+  console.log('ð¥ OTA_VehAvailRateRS:', text);
 
-  if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
+  if (!r.ok) throw new Error(`HTTP disponibilitÃ  ${r.status}`);
   const parsed = xmlParser.parse(text);
   const otaError = extractOtaErrorText(parsed) || extractOtaErrorText(text);
   if (otaError) throw new Error(otaError);
@@ -891,15 +881,15 @@ async function updateReservationData(reservationId, contractData) {
     headers.Authorization = `Bearer ${CRS_API_KEY}`;
   }
 
-  console.log('📤 CRS UPDATE URL:', url);
-  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+  console.log('ð¤ CRS UPDATE URL:', url);
+  console.log('ð¤ CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
 
   async function doCrsPost(bodyPayload, label) {
     const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(bodyPayload) });
     const text = await r.text();
     let data;
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    console.log(`📥 CRS UPDATE RISPOSTA ${label}:`, JSON.stringify(data, null, 2));
+    console.log(`ð¥ CRS UPDATE RISPOSTA ${label}:`, JSON.stringify(data, null, 2));
     return { r, text, data };
   }
 
@@ -937,119 +927,39 @@ function publicBaseUrl(req) {
   return APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || (host ? `${proto}://${host}` : '');
 }
 
-function publicBaseUrl(req) {
-  const proto = req?.headers?.['x-forwarded-proto'] || 'https';
-  const host = req?.headers?.['x-forwarded-host'] || req?.headers?.host || '';
-  return APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || (host ? `${proto}://${host}` : '');
-}
-
 function canUseNexi() {
   return Boolean(NEXI_ALIAS && NEXI_MAC_KEY);
 }
-
-function nexiMacPayMail({ apiKey, codiceTransazione, importo, timeStamp }) {
-  // PayMail BO Nexi: firma standard usata dalla API ecommerce/bo.
-  const source =
-    `apiKey=${apiKey}` +
-    `codiceTransazione=${codiceTransazione}` +
-    `importo=${importo}` +
-    `timeStamp=${timeStamp}` +
-    NEXI_MAC_KEY;
-
+function nexiMac({ apiKey, codiceTransazione, importo, timeStamp }) {
+  const source = `apiKey=${apiKey}` + `codiceTransazione=${codiceTransazione}` + `importo=${importo}` + `timeStamp=${timeStamp}` + NEXI_MAC_KEY;
   return crypto.createHash('sha1').update(source).digest('hex');
 }
-
-function extractNexiPaymentUrl(data) {
-  if (!data || typeof data !== 'object') return '';
-
-  return (
-    data.payMailUrl ||
-    data.paymailUrl ||
-    data.urlPayMail ||
-    data.url ||
-    data.link ||
-    data.paymentUrl ||
-    data.urlPagamento ||
-    data.redirectUrl ||
-    data?.result?.payMailUrl ||
-    data?.result?.url ||
-    data?.result?.link ||
-    ''
-  );
-}
-
 async function createNexiLink(amount, description, from, baseUrl) {
   const codiceTransazione = buildOrderId('DP');
   const timeStamp = Date.now().toString();
   const importo = String(euroToCents(amount));
   const callbackBase = (baseUrl || APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
-
-  // PAYLOAD BASE: niente urlpost/url_post/url_back perché il tuo endpoint li ha rifiutati.
   const payload = {
     apiKey: NEXI_ALIAS,
     codiceTransazione,
     importo,
     timeStamp,
-    mac: nexiMacPayMail({ apiKey: NEXI_ALIAS, codiceTransazione, importo, timeStamp }),
+    mac: nexiMac({ apiKey: NEXI_ALIAS, codiceTransazione, importo, timeStamp }),
     timeout: String(NEXI_TIMEOUT_HOURS),
-    parametriAggiuntivi: {
-      source: 'dp_whatsapp',
-      description: String(description || '').slice(0, 120),
-      from: String(from || '')
-    }
+    url: `${callbackBase}/nexi/result`,
+    parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
 
-  // Solo se vuoi provarli da env senza cambiare codice:
-  // NEXI_SEND_RETURN_URLS=true
-  if (String(process.env.NEXI_SEND_RETURN_URLS || '').toLowerCase() === 'true' && callbackBase) {
-    payload.url = `${callbackBase}/nexi/result`;
-    payload.url_ok = `${callbackBase}/nexi/result`;
-    payload.url_ko = `${callbackBase}/nexi/cancel`;
-    payload.url_cancel = `${callbackBase}/nexi/cancel`;
-  }
+  console.log('ð¤ NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
+  const r = await fetch(NEXI_PAYMAIL_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await r.json().catch(() => ({}));
+  console.log('ð¥ NEXI:', data);
 
-  console.log('NEXI REQUEST:', {
-    endpoint: NEXI_PAYMAIL_ENDPOINT,
-    codiceTransazione,
-    importo,
-    env: NEXI_ENV,
-    hasAlias: Boolean(NEXI_ALIAS),
-    hasMacKey: Boolean(NEXI_MAC_KEY),
-    sendReturnUrls: Boolean(payload.url)
-  });
-
-  const r = await fetch(NEXI_PAYMAIL_ENDPOINT, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-  console.log('NEXI RESPONSE:', JSON.stringify(data, null, 2));
-
-  if (!r.ok) {
-    throw new Error(`HTTP Nexi ${r.status}: ${text.slice(0, 500)}`);
-  }
-
-  if (String(data.esito || '').toUpperCase() === 'KO') {
-    const msg =
-      data?.errore?.messaggio ||
-      data?.errore?.description ||
-      data?.errore?.codice ||
-      data?.messaggio ||
-      JSON.stringify(data).slice(0, 500);
-    throw new Error(msg);
-  }
-
-  const payMailUrl = extractNexiPaymentUrl(data);
-  if (!payMailUrl) {
-    throw new Error('Nexi OK ma link pagamento non trovato nella risposta: ' + JSON.stringify(data).slice(0, 500));
-  }
-
-  return { codiceTransazione, payMailUrl };
+  if (!r.ok) throw new Error(`HTTP Nexi ${r.status}`);
+  if (data.esito !== 'OK') throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || 'Errore Nexi');
+  const payUrl = data.payMailUrl || data.paymailUrl || data.url || data.urlPayMail || data.link || data.paymentUrl;
+  if (!payUrl) throw new Error('Nexi non ha restituito il link pagamento: ' + JSON.stringify(data).slice(0, 500));
+  return { codiceTransazione, payMailUrl: payUrl };
 }
 
 // =========================
@@ -1095,7 +1005,7 @@ Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || 
 Giorni: ${session.pending?.days || '-'}
 Km richiesti: ${session.pending?.requestedKm || '-'}
 
-La richiesta è arrivata al bot DP Rent.`
+La richiesta Ã¨ arrivata al bot DP Rent.`
     );
   } catch (e) {
     console.error('ERRORE NOTIFICA PREVENTIVO:', e.message);
@@ -1105,15 +1015,7 @@ La richiesta è arrivata al bot DP Rent.`
 // =========================
 // ROUTES
 // =========================
-app.get('/', (req, res) => res.send('Server DP Rent attivo '));
-app.get('/health', (req, res) => res.json({ ok: true, service: 'dp-rent', time: new Date().toISOString() }));
-
-app.get('/contratto/:codice', (req, res) => {
-  const tx = transactions[req.params.codice];
-  if (!tx) return res.status(404).send('<h1>Contratto non trovato</h1><p>Il server potrebbe essersi riavviato. Contatta Trasporti DP.</p>');
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(buildContractHtml(tx));
-});
+app.get('/', (req, res) => res.send('DP Rent bot attivo'));
 
 app.get('/nexi/result', async (req, res) => {
   const codice = req.query.codiceTransazione || req.query.codTrans || req.query.orderId || '';
@@ -1239,7 +1141,7 @@ async function handleWhatsApp(req, res) {
         try {
           vehicles = filterVehiclesByRequest(await getAvailability(range.startDate, range.endDate), session.answers[0]);
         } catch (e) {
-          console.error('Errore disponibilità:', e.message);
+          console.error('Errore disponibilitÃ :', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
           await sendInternal(INTERNAL_GENERAL_NUMBERS, `ERRORE DISPONIBILITA NOLEGGIO
@@ -1259,7 +1161,7 @@ Errore: ${e.message}`);
         if (!vehicles.length) {
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non trovo disponibilità per queste date. Mandami un’altra data. Esempio: 18/05 - 20/05'));
+          twiml.message(safeWhatsAppText('Non trovo disponibilitÃ  per queste date. Mandami unâaltra data. Esempio: 18/05 - 20/05'));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1378,7 +1280,7 @@ Errore: ${e.message}`);
             'Codice SDI? Se non presente scrivi NO.',
             'Referente aziendale?',
             'Indirizzo fatturazione azienda?',
-            'Città fatturazione?',
+            'CittÃ  fatturazione?',
             'Provincia fatturazione? Esempio: TR',
             'CAP fatturazione?'
           );
@@ -1423,8 +1325,8 @@ Errore: ${e.message}`);
         return res.end(twiml.toString());
       }
 
-      // FIX: non faccio più un secondo controllo disponibilità con confronto codice.
-      // MyAppy può restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
+      // FIX: non faccio piÃ¹ un secondo controllo disponibilitÃ  con confronto codice.
+      // MyAppy puÃ² restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
       // Provo direttamente a prenotare il mezzo scelto dall'utente.
       let reservation;
       try {
@@ -1508,14 +1410,14 @@ ${EMO.cal} *Periodo*
 Dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)
 
 ${EMO.road} *Km richiesti:* ${session.pending.requestedKm} km
-${EMO.money} *Totale noleggio:* EUR ${euro(session.pending.prezzoFinale)}
+${EMO.money} *Totale noleggio:* â¬ ${euro(session.pending.prezzoFinale)}
 
 ${EMO.doc} *Prenotazione gestionale:* ${reservation.id || '-'}
 ${EMO.pin} *Stato:* ${reservation.status || '-'}
 
 ${paymentLink ? `${EMO.card} *Pagamento online*\n${paymentLink}` : `${EMO.warn} Link pagamento non generato. Ti invieremo il link appena pronto.`}
 
-${EMO.money} Caparra EUR ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+${EMO.money} Caparra â¬ ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
 
 *DP RENT*`));
 
@@ -1542,10 +1444,7 @@ app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server DP Rent NEXI DEFINITIVO avviato sulla porta ${PORT}`);
+  console.log(`Server DP Rent ROLLBACK PULITO avviato sulla porta ${PORT}`);
   console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
   console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
-  console.log('Nexi env:', NEXI_ENV);
-  console.log('Nexi alias presente:', Boolean(NEXI_ALIAS));
-  console.log('Nexi mac key presente:', Boolean(NEXI_MAC_KEY));
 });

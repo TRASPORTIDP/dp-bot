@@ -375,31 +375,29 @@ function safeWhatsAppText(text) {
   return String(text || '')
     .normalize('NFC')
     .replace(/[\uFFFD]/g, '')
+    .replace(/[^\s]*/g, '')
+    .replace(/EUR/g, 'EUR')
+    .replace(/Ã¢Åâ¦/g, '')
+    .replace(/Ã¢Å¡[^\s]*/g, '')
+    .replace(/[^\s]*/g, '')
+    .replace(/ï¿½/g, '')
     .replace(/\r\n/g, '\n')
     .trim();
 }
 
-const EMO = {
-  hi: '\u{1F44B}',
-  ok: '\u2705',
-  car: '\u{1F697}',
-  van: '\u{1F690}',
-  truck: '\u{1F69A}',
-  money: '\u{1F4B0}',
-  card: '\u{1F4B3}',
-  cal: '\u{1F4C5}',
-  doc: '\u{1F9FE}',
-  pin: '\u{1F4CC}',
-  user: '\u{1F464}',
-  phone: '\u{1F4DE}',
-  mail: '\u{1F4E7}',
-  home: '\u{1F3E0}',
-  warn: '\u26A0\uFE0F',
-  wrench: '\u{1F527}',
-  park: '\u{1F17F}\uFE0F',
-  pen: '\u270D\uFE0F',
-  search: '\u{1F50E}',
-  road: '\u{1F6E3}\uFE0F'
+const ICON = {
+  ok: '[OK]',
+  warn: '[ATTENZIONE]',
+  car: '[MEZZO]',
+  money: '[IMPORTO]',
+  cal: '[DATE]',
+  doc: '[DOC]',
+  user: '[CLIENTE]',
+  phone: '[TEL]',
+  mail: '[EMAIL]',
+  home: '[INDIRIZZO]',
+  road: '[KM]',
+  pay: '[PAGAMENTO]'
 };
 
 // =========================
@@ -433,18 +431,18 @@ function touch(session) { session.createdAt = Date.now(); }
 // MENU
 // =========================
 function menuText(name) {
-  return `${EMO.hi} *Ciao ${name || 'Cliente'}*
+  return `*DP RENT - Assistenza WhatsApp*
 
-Scegli il servizio:
+Ciao ${name || 'Cliente'}, scegli il servizio:
 
-1) ${EMO.wrench} Officina
-2) ${EMO.car} Noleggio
-3) ${EMO.money} Vendita auto
-4) ${EMO.truck} Trasporto veicoli
-5) ${EMO.phone} Contatto diretto
-6) ${EMO.park} Parcheggio / Sosta
+*1* - Officina
+*2* - Noleggio
+*3* - Vendita auto
+*4* - Trasporto veicoli
+*5* - Contatto diretto
+*6* - Parcheggio / Sosta
 
-${EMO.pen} Scrivi solo il numero.
+Rispondi solo con il numero.
 Esempio: *2*`;
 }
 
@@ -494,7 +492,7 @@ function startIntent(session, intent) {
 // =========================
 function contractQuestions() {
   return [
-    'Nome e cognome conducente principale?',
+    'Nome e cognome del conducente principale?',
     'Data di nascita? Esempio: 22/04/1982',
     'Luogo di nascita?',
     'Codice fiscale conducente?',
@@ -512,8 +510,8 @@ function contractQuestions() {
     'Ente rilascio patente? Esempio: Motorizzazione',
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
-    'Fatturazione PRIVATO o AZIENDA?',
-    'CâÃ¨ un secondo autista? Rispondi SÃ oppure NO.'
+    'Fatturazione: PRIVATO o AZIENDA?',
+    'Secondo autista? Rispondi SI oppure NO.'
   ];
 }
 
@@ -584,17 +582,23 @@ function parseContractAnswers(a, profileName, from) {
 
 function contractSummary(c) {
   const billing = c.billing_type === 'company'
-    ? `\n${EMO.doc} *Fatturazione azienda*\nRagione sociale: ${c.company_name}\nP.IVA: ${c.vat_number}\nCF azienda: ${c.company_tax_number || '-'}\nPEC: ${c.pec || '-'}\nSDI: ${c.sdi_code || '-'}\nReferente: ${c.contact_person || '-'}\nSede: ${c.billing_address}, ${c.billing_city} (${c.billing_province}) ${c.billing_zip_code}`
-    : `\n${EMO.doc} *Fatturazione privato*`;
+    ? `\n\n*Fatturazione azienda*\nRagione sociale: ${c.company_name}\nP.IVA: ${c.vat_number}\nCF azienda: ${c.company_tax_number || '-'}\nPEC: ${c.pec || '-'}\nSDI: ${c.sdi_code || '-'}\nReferente: ${c.contact_person || '-'}\nSede: ${c.billing_address}, ${c.billing_city} (${c.billing_province}) ${c.billing_zip_code}`
+    : `\n\n*Fatturazione privato*`;
 
-  return `${EMO.user} *${c.first_name} ${c.name}*
-${EMO.cal} ${c.date_of_birth} - ${c.place_of_birth}
-${EMO.doc} CF: ${c.tax_number}
-${EMO.mail} ${c.email}
-${EMO.phone} ${c.phone}
-${EMO.home} ${c.address}, ${c.city} (${c.province}) ${c.zip_code}
-${EMO.doc} Documento: ${c.id_number} - scad. ${c.id_expiry_date}
-${EMO.car} Patente: ${c.license_number} - scad. ${c.license_expiry_date}${billing}${c.hasSecondDriver ? `\n${EMO.user} Secondo autista: ${c.secondDriverName}` : ''}`;
+  return `*Cliente / conducente*
+${c.first_name} ${c.name}
+
+Nascita: ${c.date_of_birth} - ${c.place_of_birth}
+CF: ${c.tax_number}
+Email: ${c.email}
+Telefono: ${c.phone}
+Indirizzo: ${c.address}, ${c.city} (${c.province}) ${c.zip_code}
+
+Documento: ${c.id_number}
+Scadenza documento: ${c.id_expiry_date}
+
+Patente: ${c.license_number}
+Scadenza patente: ${c.license_expiry_date}${billing}${c.hasSecondDriver ? `\n\nSecondo autista: ${c.secondDriverName}` : ''}`;
 }
 
 function buildContractHtml(tx) {
@@ -1141,7 +1145,7 @@ Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || 
 Km: ${session.pending?.requestedKm || '-'}
 Errore: ${e.message}`);
 
-        twiml.message(safeWhatsAppText(`${EMO.warn} ${formatOtaErrorForCustomer(e.message)}\n\n${pickupHoursText()}`));
+        twiml.message(safeWhatsAppText(`${ICON.warn} ${formatOtaErrorForCustomer(e.message)}\n\n${pickupHoursText()}`));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1250,7 +1254,7 @@ Errore: ${e.message}`);
       const currentQuestion = String((session.pending.contractQuestions || [])[idx] || '').toLowerCase();
 
       if (currentQuestion.includes('secondo autista') && !yesNo(body)) {
-        twiml.message(safeWhatsAppText('Rispondimi solo SI oppure NO.'));
+        twiml.message(safeWhatsAppText('Rispondi solo SI oppure NO.'));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
       }
@@ -1292,7 +1296,7 @@ Errore: ${e.message}`);
       session.state = 'confirm_noleggio';
       touch(session);
 
-      twiml.message(safeWhatsAppText(`${EMO.search} *Controlla i dati contratto*\n\n${contractSummary(session.pending.contractData)}\n\n Mezzo: ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`));
+      twiml.message(safeWhatsAppText(`${''} *Controlla i dati contratto*\n\n${contractSummary(session.pending.contractData)}\n\n Mezzo: ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n\nConfermi prenotazione e contratto?\nRispondi SI oppure NO.`));
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
       return res.end(twiml.toString());
     }
@@ -1387,27 +1391,33 @@ Ho inviato tutto allo staff con codice mezzo e UID. Scrivi menu per riprovare.`)
 
       await sendInternal(INTERNAL_GENERAL_NUMBERS, ` PRENOTAZIONE NOLEGGIO CONFERMATA\n\n ${profileName}\n ${from}\n ${session.pending.selectedVehicle.name}\n ${session.pending.startLabel} - ${session.pending.endLabel}\n EUR ${euro(session.pending.prezzoFinale)}\n Prenotazione: ${reservation.id || '-'}\n Update anagrafica: ${updateId || '-'}\n\n${contractSummary(session.pending.contractData)}${paymentLink ? `\n\nLink Nexi: ${paymentLink}` : ''}`);
 
-      twiml.message(safeWhatsAppText(`${EMO.ok} *PRENOTAZIONE CONFERMATA*
+      twiml.message(safeWhatsAppText(`*DP RENT - PRENOTAZIONE CONFERMATA*
 
-Grazie *${profileName}*
+Grazie *${profileName}*.
 
-${EMO.van} *Mezzo scelto*
+*Mezzo*
 ${session.pending.selectedVehicle.name}
 
-${EMO.cal} *Periodo*
+*Periodo*
 Dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)
 
-${EMO.road} *Km richiesti:* ${session.pending.requestedKm} km
-${EMO.money} *Totale noleggio:* â¬ ${euro(session.pending.prezzoFinale)}
+*Km richiesti*
+${session.pending.requestedKm} km
 
-${EMO.doc} *Prenotazione gestionale:* ${reservation.id || '-'}
-${EMO.pin} *Stato:* ${reservation.status || '-'}
+*Totale noleggio*
+EUR ${euro(session.pending.prezzoFinale)}
 
-${paymentLink ? `${EMO.card} *Pagamento online*\n${paymentLink}` : `${EMO.warn} Link pagamento non generato. Ti invieremo il link appena pronto.`}
+*Prenotazione gestionale*
+${reservation.id || '-'}
 
-${EMO.money} Caparra â¬ ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+*Stato*
+${reservation.status || '-'}
 
-*DP RENT*`));
+${paymentLink ? `*Pagamento online*\n${paymentLink}` : `Il link pagamento non e stato generato automaticamente. Lo staff te lo inviera appena pronto.`}
+
+Caparra EUR ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+
+Grazie per aver scelto *DP RENT*.`));
 
       clearSession(from);
       res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
@@ -1432,9 +1442,8 @@ app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server DP Rent FIX CRS NEXI DATE avviato sulla porta ${PORT}`);
+  console.log(`Server DP Rent PROFESSIONALE avviato sulla porta ${PORT}`);
   console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
   console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
   console.log('CRS API base:', CRS_API_BASE_URL);
-  console.log('CRS auth presenti:', Boolean(CRS_BROKER_ID), Boolean(CRS_API_KEY));
 });

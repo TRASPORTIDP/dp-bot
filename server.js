@@ -943,6 +943,27 @@ async function notifyPayment(tx) {
   }
 }
 
+
+async function notifyQuoteRequest(session, from, profileName) {
+  try {
+    await sendInternal(
+      INTERNAL_GENERAL_NUMBERS,
+      `RICHIESTA PREVENTIVO NOLEGGIO
+
+Cliente: ${profileName}
+WhatsApp: ${from}
+Mezzo richiesto: ${session.pending?.requestedVehicle || '-'}
+Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || '-'}
+Giorni: ${session.pending?.days || '-'}
+Km richiesti: ${session.pending?.requestedKm || '-'}
+
+La richiesta è arrivata al bot DP Rent.`
+    );
+  } catch (e) {
+    console.error('ERRORE NOTIFICA PREVENTIVO:', e.message);
+  }
+}
+
 // =========================
 // ROUTES
 // =========================
@@ -1083,7 +1104,16 @@ async function handleWhatsApp(req, res) {
           console.error('Errore disponibilità:', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText(`${EMO.warn} ${formatOtaErrorForCustomer(e.message)}\n\n${pickupHoursText()}`));
+          await sendInternal(INTERNAL_GENERAL_NUMBERS, `ERRORE DISPONIBILITA NOLEGGIO
+
+Cliente: ${profileName}
+WhatsApp: ${from}
+Mezzo: ${session.pending?.requestedVehicle || '-'}
+Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || '-'}
+Km: ${session.pending?.requestedKm || '-'}
+Errore: ${e.message}`);
+
+        twiml.message(safeWhatsAppText(`${EMO.warn} ${formatOtaErrorForCustomer(e.message)}\n\n${pickupHoursText()}`));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1189,7 +1219,9 @@ async function handleWhatsApp(req, res) {
         }
       }
 
-      if ((idx === 19 || idx === 29) && !yesNo(body)) {
+      const currentQuestion = String((session.pending.contractQuestions || [])[idx] || '').toLowerCase();
+
+      if (currentQuestion.includes('secondo autista') && !yesNo(body)) {
         twiml.message(safeWhatsAppText('Rispondimi solo SI oppure NO.'));
         res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
         return res.end(twiml.toString());
@@ -1215,7 +1247,7 @@ async function handleWhatsApp(req, res) {
         }
       }
 
-      if ((idx === 19 || idx === 29) && yesNo(body) === 'SI') {
+      if (currentQuestion.includes('secondo autista') && yesNo(body) === 'SI') {
         session.pending.contractQuestions.push('Nome e cognome del secondo autista.');
       }
 
@@ -1371,4 +1403,8 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent FIX AZIENDA avviato sulla porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server DP Rent FIX AZIENDA NOTIFICHE avviato sulla porta ${PORT}`);
+  console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
+  console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
+});

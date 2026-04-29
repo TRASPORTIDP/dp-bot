@@ -1149,18 +1149,6 @@ async function handleWhatsApp(req, res) {
       const idx = session.pending.contractQuestionIndex || 0;
       const qs = session.pending.contractQuestions || contractQuestions();
 
-      if (idx === 18 && !yesNo(body)) {
-        twiml.message(safeWhatsAppText('Rispondimi solo SI oppure NO.'));
-        res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
-        return res.end(twiml.toString());
-      }
-
-      if (idx === 4 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body)) {
-        twiml.message(safeWhatsAppText('Email non valida. Scrivila cosi: nome@email.it'));
-        res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
-        return res.end(twiml.toString());
-      }
-
       // Validazioni forti: MyAppy rifiuta con E05504 se date/email sono sporche.
       if ([1, 12, 13, 16, 17].includes(idx) && !isIsoDateStrict(body)) {
         twiml.message(safeWhatsAppText('Data non valida. Scrivila cosi: 22/04/1982'));
@@ -1383,4 +1371,4 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server DP Rent ERRORI OTA SMART avviato sulla porta ${PORT}`));
+app.listen(PORT, () => console.log(`Server DP Rent FIX AZIENDA avviato sulla porta ${PORT}`));

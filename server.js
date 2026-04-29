@@ -274,7 +274,7 @@ function findFirst(obj, keys) {
 
 
 function normVehicleCode(v) {
-  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[â€“â€”]/g, '-').trim();
+  return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/[–—]/g, '-').trim();
 }
 
 function catalogByCode(code) {
@@ -372,20 +372,11 @@ function isDuplicateSid(sid) {
 
 
 function safeWhatsAppText(text) {
-  let s = String(text || '')
+  return String(text || '')
     .normalize('NFC')
     .replace(/[\uFFFD]/g, '')
-    .replace(/Ã¢â€šÂ¬/g, 'â‚¬')
-    .replace(/Ã¢ï¿½Â¬/g, 'â‚¬')
-    .replace(/Ã¢ï¿½Â­/g, 'â‚¬')
-    .replace(/Ã¢ï¿½Â¯/g, 'â‚¬')
-    .replace(/Ã¢/g, '')
-    .replace(/Ã°Å¸[^\s]*/g, '')
-    .replace(/Ã¯Â¸[^\s]*/g, '')
     .replace(/\r\n/g, '\n')
     .trim();
-
-  return s;
 }
 
 const DP = {
@@ -499,7 +490,7 @@ function questionsFor(intent) {
   if (intent === 'vendita') return ['Che tipo di auto cerchi?', 'Budget indicativo?', 'Hai permuta?'];
   if (intent === 'trasporto') return ['Che veicolo devi trasportare?', 'Da dove ritirare?', 'Dove consegnare?', 'Quando ti serve?'];
   if (intent === 'contatto') return ['Scrivimi brevemente il motivo della richiesta.'];
-  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sÃ¬/no', 'Hai bisogno di acqua? sÃ¬/no'];
+  if (intent === 'sosta') return ['Che mezzo devi lasciare?', 'Date sosta? Esempio: 10/05 - 15/05', 'Hai bisogno di corrente? sì/no', 'Hai bisogno di acqua? sì/no'];
   return [];
 }
 
@@ -546,10 +537,10 @@ function contractQuestions() {
     'Email?',
     'Telefono?',
     'Indirizzo completo?',
-    'CittÃ ?',
+    'Città?',
     'Provincia? Esempio: TR',
     'CAP?',
-    'Numero documento / carta identitÃ ?',
+    'Numero documento / carta identità?',
     'Ente rilascio documento? Esempio: Comune di Terni',
     'Data rilascio documento? Esempio: 16/01/2020',
     'Scadenza documento? Esempio: 15/01/2028',
@@ -558,7 +549,7 @@ function contractQuestions() {
     'Data rilascio patente? Esempio: 22/01/2015',
     'Scadenza patente? Esempio: 01/01/2028',
     'Fatturazione PRIVATO o AZIENDA?',
-    'Câ€™Ã¨ un secondo autista? Rispondi SÃŒ oppure NO.'
+    'C’è un secondo autista? Rispondi SÌ oppure NO.'
   ];
 }
 
@@ -715,16 +706,22 @@ async function getAvailability(startDate, endDate) {
 <PickUpLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/><ReturnLocation LocationCode="${xmlEscape(CARRENTAL_LOCATION_CODE)}"/>
 </VehRentalCore></VehAvailRQCore></ns1:OTA_VehAvailRateRQ></SOAP-ENV:Body></SOAP-ENV:Envelope>`;
 
-  console.log('ðŸ“¤ OTA_VehAvailRateRQ:', xml);
+  console.log('📤 OTA_VehAvailRateRQ:', xml);
   const r = await fetch(CARRENTAL_AVAIL_URL, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8' }, body: xml });
   const text = await r.text();
-  console.log('ðŸ“¥ OTA_VehAvailRateRS:', text);
+  console.log('📥 OTA_VehAvailRateRS:', text);
 
-  if (!r.ok) throw new Error(`HTTP disponibilitÃ  ${r.status}`);
+  if (!r.ok) throw new Error(`HTTP disponibilità ${r.status}`);
   const parsed = xmlParser.parse(text);
   const otaError = extractOtaErrorText(parsed) || extractOtaErrorText(text);
   if (otaError) throw new Error(otaError);
   return arrayify(findFirst(parsed, ['VehAvail', 'ns1:VehAvail'])).map(vehicleFromAvail).filter(v => v.code || v.name);
+}
+
+
+function xmlLine(value, builder) {
+  const v = String(value || '').trim();
+  return v ? builder(v) : '';
 }
 
 async function createReservation(session, from) {
@@ -736,6 +733,27 @@ async function createReservation(session, from) {
   const tax = Math.max(0, amount - net);
   const phone = String(c.phone || from || '').replace('whatsapp:', '').replace(/\s+/g, '');
   const email = c.email || 'cliente@trasportidp.com';
+
+  const birthDate = c.date_of_birth || '';
+  const addressLine = c.address || '';
+  const cityName = c.city || '';
+  const countryName = 'IT';
+  const postalCode = c.zip_code || '';
+  const stateProv = c.province || '';
+
+  const docNumber = c.id_number || '';
+  const docIssuer = c.id_issuer || '';
+  const docIssueDate = c.id_issue_date || '';
+  const docExpiryDate = c.id_expiry_date || '';
+
+  const licenseNote = [
+    c.license_number ? `Patente: ${c.license_number}` : '',
+    c.license_issuer ? `Rilasciata da: ${c.license_issuer}` : '',
+    c.license_issue_date ? `Rilascio patente: ${c.license_issue_date}` : '',
+    c.license_expiry_date ? `Scadenza patente: ${c.license_expiry_date}` : '',
+    c.tax_number ? `CF: ${c.tax_number}` : '',
+    c.billing_type === 'company' ? `Fatturazione azienda: ${c.company_name || ''} PIVA ${c.vat_number || ''} PEC ${c.pec || ''} SDI ${c.sdi_code || ''}` : ''
+  ].filter(Boolean).join(' | ');
 
   // IMPORTANTE:
   // OTA_VehResRQ resta volutamente MINIMA.
@@ -757,13 +775,21 @@ async function createReservation(session, from) {
           <VehMakeModel Code="${xmlEscape(selected.code || '')}" Name=""/>
         </VehPref>
         <Customer>
-          <Primary${c.date_of_birth ? ` BirthDate="${xmlEscape(c.date_of_birth)}"` : ""}>
+          <Primary${birthDate ? ` BirthDate="${xmlEscape(birthDate)}"` : ""}>
             <PersonName>
               <GivenName>${xmlEscape(c.first_name || 'Cliente')}</GivenName>
               <Surname>${xmlEscape(c.name || 'WhatsApp')}</Surname>
             </PersonName>
+            ${docNumber ? `<Document DocType="5" DocID="${xmlEscape(docNumber)}" DocIssueAuthority="${xmlEscape(docIssuer)}"${docIssueDate ? ` EffectiveDate="${xmlEscape(docIssueDate)}"` : ''}${docExpiryDate ? ` ExpireDate="${xmlEscape(docExpiryDate)}"` : ''}/>` : ''}
             <Telephone PhoneNumber="${xmlEscape(phone)}"/>
             <Email>${xmlEscape(email)}</Email>
+            ${(addressLine || cityName || postalCode || stateProv) ? `<Address>
+              ${addressLine ? `<AddressLine>${xmlEscape(addressLine)}</AddressLine>` : ''}
+              ${cityName ? `<CityName>${xmlEscape(cityName)}</CityName>` : ''}
+              <CountryName>${xmlEscape(countryName)}</CountryName>
+              ${postalCode ? `<PostalCode>${xmlEscape(postalCode)}</PostalCode>` : ''}
+              ${stateProv ? `<StateProv>${xmlEscape(stateProv)}</StateProv>` : ''}
+            </Address>` : ''}
           </Primary>
         </Customer>
         <VehicleCharges>
@@ -775,7 +801,9 @@ async function createReservation(session, from) {
         </VehicleCharges>
         <TotalCharge CurrencyCode="EUR" RateTotalAmount="${net.toFixed(2)}" EstimatedTotalAmount="${amount.toFixed(2)}"/>
       </VehResRQCore>
-      <VehResRQInfo ResStatus="Book"/>
+      <VehResRQInfo ResStatus="Book">
+        ${licenseNote ? `<SpecialReqPref>${xmlEscape(licenseNote)}</SpecialReqPref>` : ''}
+      </VehResRQInfo>
     </ns1:OTA_VehResRQ>
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`;
@@ -817,100 +845,55 @@ async function createReservation(session, from) {
 }
 
 
-
-function crsDate(value) {
-  const d = isoDate(value);
-  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return '';
-  return `${d} 00:00:00`;
-}
-
-function noValueToEmpty(v) {
-  const s = String(v || '').trim();
-  if (!s || /^no$/i.test(s) || /^non presente$/i.test(s)) return '';
-  return s;
-}
-
 function buildCrsUpdatePayload(c) {
-  const isCompany = c.billing_type === 'company';
-
   const client = {
-    type: isCompany ? 'company' : 'private',
-
-    // Dati cliente/fatturazione
-    first_name: isCompany ? (c.contact_person || c.first_name || '') : (c.first_name || ''),
-    name: isCompany ? (c.company_name || c.name || '') : (c.name || ''),
+    type: c.billing_type === 'company' ? 'company' : 'private',
+    first_name: c.billing_type === 'company' ? (c.contact_person || c.first_name || '') : (c.first_name || ''),
+    name: c.billing_type === 'company' ? (c.company_name || c.name || '') : (c.name || ''),
     contact_person: c.contact_person || `${c.first_name || ''} ${c.name || ''}`.trim(),
+    vat_number: c.billing_type === 'company' ? (c.vat_number || '') : null,
+    tax_number: c.billing_type === 'company' ? (c.company_tax_number || c.vat_number || '') : (c.tax_number || ''),
+    pec: c.billing_type === 'company' ? (c.pec || null) : null,
+    sdi_code: c.billing_type === 'company' ? (c.sdi_code || null) : null,
     email: c.email || '',
     phone: c.phone || '',
-    address: isCompany ? (c.billing_address || c.address || '') : (c.address || ''),
-    city: isCompany ? (c.billing_city || c.city || '') : (c.city || ''),
-    province: isCompany ? (c.billing_province || c.province || '') : (c.province || ''),
-    zip_code: isCompany ? (c.billing_zip_code || c.zip_code || '') : (c.zip_code || ''),
+    address: c.billing_type === 'company' ? (c.billing_address || c.address || '') : (c.address || ''),
+    city: c.billing_type === 'company' ? (c.billing_city || c.city || '') : (c.city || ''),
+    province: c.billing_type === 'company' ? (c.billing_province || c.province || '') : (c.province || ''),
+    zip_code: c.billing_type === 'company' ? (c.billing_zip_code || c.zip_code || '') : (c.zip_code || ''),
     country_id: c.country_id || '111',
-
-    // Fiscale
-    tax_number: isCompany ? (c.company_tax_number || c.vat_number || '') : (c.tax_number || ''),
-    vat_number: isCompany ? (c.vat_number || '') : null,
-    pec: isCompany ? (noValueToEmpty(c.pec) || null) : null,
-    sdi_code: isCompany ? (noValueToEmpty(c.sdi_code) || null) : null,
-
-    // Se privato MyAppy li mostra in anagrafica cliente
-    date_of_birth: isCompany ? null : crsDate(c.date_of_birth),
-    place_of_birth: isCompany ? null : (c.place_of_birth || '')
+    date_of_birth: c.billing_type === 'company' ? null : (c.date_of_birth || ''),
+    place_of_birth: c.billing_type === 'company' ? null : (c.place_of_birth || '')
   };
 
   const driver0 = {
     first_name: c.first_name || '',
     name: c.name || '',
-    email: c.email || '',
-    phone: c.phone || '',
-
     address: c.address || '',
     city: c.city || '',
     province: c.province || '',
     zip_code: c.zip_code || '',
     country_id: c.country_id || '111',
     nationality: c.nationality || 'IT',
-
-    date_of_birth: crsDate(c.date_of_birth),
+    phone: c.phone || '',
+    email: c.email || '',
     place_of_birth: c.place_of_birth || '',
+    date_of_birth: c.date_of_birth || '',
     tax_number: c.tax_number || '',
-
     id_type: c.id_type || 'id',
     id_number: c.id_number || '',
     id_issuer: c.id_issuer || '',
     id_issuer_locality: c.id_issuer_locality || c.city || '',
-    id_issue_date: crsDate(c.id_issue_date),
-    id_expiry_date: crsDate(c.id_expiry_date),
-
+    id_issue_date: c.id_issue_date || '',
+    id_expiry_date: c.id_expiry_date || '',
     license_number: c.license_number || '',
     license_issuer: c.license_issuer || '',
     license_issuer_locality: c.license_issuer_locality || c.city || '',
-    license_issue_date: crsDate(c.license_issue_date),
-    license_expiry_date: crsDate(c.license_expiry_date)
+    license_issue_date: c.license_issue_date || '',
+    license_expiry_date: c.license_expiry_date || ''
   };
 
-  // MyAppy accetta client + client_driver; aggiungo anche campi flat per compatibilitÃ .
-  const payload = {
-    client,
-    client_driver: { "0": driver0 },
-
-    type: client.type,
-    first_name: client.first_name,
-    name: client.name,
-    contact_person: client.contact_person,
-    email: client.email,
-    phone: client.phone,
-    address: client.address,
-    city: client.city,
-    province: client.province,
-    zip_code: client.zip_code,
-    country_id: client.country_id,
-    tax_number: client.tax_number,
-    vat_number: client.vat_number,
-    pec: client.pec,
-    sdi_code: client.sdi_code
-  };
+  const payload = { client, client_driver: { "0": driver0 } };
 
   if (c.hasSecondDriver && c.secondDriverName) {
     const s = splitName(c.secondDriverName);
@@ -951,15 +934,15 @@ async function updateReservationData(reservationId, contractData) {
     headers.Authorization = `Bearer ${CRS_API_KEY}`;
   }
 
-  console.log('ðŸ“¤ CRS UPDATE URL:', url);
-  console.log('ðŸ“¤ CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
+  console.log('📤 CRS UPDATE URL:', url);
+  console.log('📤 CRS UPDATE BODY:', JSON.stringify(payload, null, 2));
 
   async function doCrsPost(bodyPayload, label) {
     const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(bodyPayload) });
     const text = await r.text();
     let data;
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    console.log(`ðŸ“¥ CRS UPDATE RISPOSTA ${label}:`, JSON.stringify(data, null, 2));
+    console.log(`📥 CRS UPDATE RISPOSTA ${label}:`, JSON.stringify(data, null, 2));
     return { r, text, data };
   }
 
@@ -1020,10 +1003,10 @@ async function createNexiLink(amount, description, from, baseUrl) {
     parametriAggiuntivi: { source: 'dp_whatsapp', description, from }
   };
 
-  console.log('ðŸ“¤ NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
+  console.log('📤 NEXI:', { endpoint: NEXI_PAYMAIL_ENDPOINT, codiceTransazione, importo, env: NEXI_ENV });
   const r = await fetch(NEXI_PAYMAIL_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await r.json().catch(() => ({}));
-  console.log('ðŸ“¥ NEXI:', data);
+  console.log('📥 NEXI:', data);
 
   if (!r.ok) throw new Error(`HTTP Nexi ${r.status}`);
   if (data.esito !== 'OK') throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || 'Errore Nexi');
@@ -1075,7 +1058,7 @@ Periodo: ${session.pending?.startLabel || '-'} - ${session.pending?.endLabel || 
 Giorni: ${session.pending?.days || '-'}
 Km richiesti: ${session.pending?.requestedKm || '-'}
 
-La richiesta Ã¨ arrivata al bot DP Rent.`
+La richiesta è arrivata al bot DP Rent.`
     );
   } catch (e) {
     console.error('ERRORE NOTIFICA PREVENTIVO:', e.message);
@@ -1139,6 +1122,50 @@ app.post('/nexi/notify', async (req, res) => {
 });
 
 app.get('/nexi/cancel', (req, res) => res.send('<h1>Pagamento annullato</h1>'));
+
+
+async function forwardIncomingMediaToStaff(from, profileName, req) {
+  const numMedia = Number(req.body.NumMedia || 0);
+  if (!numMedia || numMedia <= 0) return false;
+
+  const text = String(req.body.Body || '').trim();
+  const note = `FOTO DOCUMENTI / PATENTE
+
+Cliente: ${profileName || '-'}
+WhatsApp: ${from}
+Messaggio: ${text || '-'}
+
+Foto ricevute: ${numMedia}`;
+
+  for (const to of INTERNAL_GENERAL_NUMBERS) {
+    try {
+      await client.messages.create({
+        from: TWILIO_WHATSAPP_NUMBER,
+        to,
+        body: safeWhatsAppText(note)
+      });
+
+      for (let i = 0; i < numMedia; i++) {
+        const mediaUrl = req.body[`MediaUrl${i}`];
+        const mediaType = req.body[`MediaContentType${i}`] || '';
+        if (!mediaUrl) continue;
+
+        await client.messages.create({
+          from: TWILIO_WHATSAPP_NUMBER,
+          to,
+          body: safeWhatsAppText(`Foto ${i + 1}/${numMedia} - ${mediaType}`),
+          mediaUrl: [mediaUrl]
+        });
+      }
+
+      console.log('FOTO INVIATE ALLO STAFF:', to, numMedia);
+    } catch (e) {
+      console.error('ERRORE INVIO FOTO STAFF:', to, e.message);
+    }
+  }
+
+  return true;
+}
 
 // =========================
 // WEBHOOK WHATSAPP
@@ -1219,7 +1246,7 @@ async function handleWhatsApp(req, res) {
         try {
           vehicles = filterVehiclesByRequest(await getAvailability(range.startDate, range.endDate), session.answers[0]);
         } catch (e) {
-          console.error('Errore disponibilitÃ :', e.message);
+          console.error('Errore disponibilità:', e.message);
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
           await sendInternal(INTERNAL_GENERAL_NUMBERS, `ERRORE DISPONIBILITA NOLEGGIO
@@ -1239,7 +1266,7 @@ Errore: ${e.message}`);
         if (!vehicles.length) {
           session.questionIndex = 1;
           session.answers = [session.answers[0]];
-          twiml.message(safeWhatsAppText('Non trovo disponibilitÃ  per queste date. Mandami unâ€™altra data. Esempio: 18/05 - 20/05'));
+          twiml.message(safeWhatsAppText('Non trovo disponibilità per queste date. Mandami un’altra data. Esempio: 18/05 - 20/05'));
           res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
           return res.end(twiml.toString());
         }
@@ -1358,7 +1385,7 @@ Errore: ${e.message}`);
             'Codice SDI? Se non presente scrivi NO.',
             'Referente aziendale?',
             'Indirizzo fatturazione azienda?',
-            'CittÃ  fatturazione?',
+            'Città fatturazione?',
             'Provincia fatturazione? Esempio: TR',
             'CAP fatturazione?'
           );
@@ -1403,8 +1430,8 @@ Errore: ${e.message}`);
         return res.end(twiml.toString());
       }
 
-      // FIX: non faccio piÃ¹ un secondo controllo disponibilitÃ  con confronto codice.
-      // MyAppy puÃ² restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
+      // FIX: non faccio più un secondo controllo disponibilità con confronto codice.
+      // MyAppy può restituire codici/nomi diversi tra availability e booking e causare falsi "non disponibile".
       // Provo direttamente a prenotare il mezzo scelto dall'utente.
       let reservation;
       try {
@@ -1488,14 +1515,14 @@ ${DP.cal} *Periodo*
 Dal ${session.pending.startLabel} al ${session.pending.endLabel} (${session.pending.days} giorni)
 
 ${DP.road} *Km richiesti:* ${session.pending.requestedKm} km
-${DP.money} *Totale noleggio:* â‚¬ ${euro(session.pending.prezzoFinale)}
+${DP.money} *Totale noleggio:* € ${euro(session.pending.prezzoFinale)}
 
 ${DP.doc} *Prenotazione gestionale:* ${reservation.id || '-'}
 ${DP.pin} *Stato:* ${reservation.status || '-'}
 
-${paymentLink ? `${DP.pay} *Pagamento online*\n${paymentLink}` : `${DP.warn} Link pagamento non generato. Lo staff te lo invierÃ  appena pronto.`}
+${paymentLink ? `${DP.pay} *Pagamento online*\n${paymentLink}` : `${DP.warn} Link pagamento non generato. Lo staff te lo invierà appena pronto.`}
 
-${DP.money} Caparra â‚¬ ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
+${DP.money} Caparra € ${centsToEuro(NOLEGGIO_DEPOSIT_CENTS)} gestita separatamente dal nostro staff.
 
 *DP RENT*`));
 
@@ -1522,7 +1549,7 @@ app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server DP Rent COLORI ROLLBACK avviato sulla porta ${PORT}`);
+  console.log(`Server DP Rent FOTO STAFF avviato sulla porta ${PORT}`);
   console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
   console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
 });

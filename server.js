@@ -746,15 +746,6 @@ async function createReservation(session, from) {
   const docIssueDate = c.id_issue_date || '';
   const docExpiryDate = c.id_expiry_date || '';
 
-  const licenseNote = [
-    c.license_number ? `Patente: ${c.license_number}` : '',
-    c.license_issuer ? `Rilasciata da: ${c.license_issuer}` : '',
-    c.license_issue_date ? `Rilascio patente: ${c.license_issue_date}` : '',
-    c.license_expiry_date ? `Scadenza patente: ${c.license_expiry_date}` : '',
-    c.tax_number ? `CF: ${c.tax_number}` : '',
-    c.billing_type === 'company' ? `Fatturazione azienda: ${c.company_name || ''} PIVA ${c.vat_number || ''} PEC ${c.pec || ''} SDI ${c.sdi_code || ''}` : ''
-  ].filter(Boolean).join(' | ');
-
   // IMPORTANTE:
   // OTA_VehResRQ resta volutamente MINIMA.
   // MyAppy restituisce HTTP 500 con "complex type / array given" se mettiamo qui
@@ -775,21 +766,13 @@ async function createReservation(session, from) {
           <VehMakeModel Code="${xmlEscape(selected.code || '')}" Name=""/>
         </VehPref>
         <Customer>
-          <Primary${birthDate ? ` BirthDate="${xmlEscape(birthDate)}"` : ""}>
+          <Primary${c.date_of_birth ? ` BirthDate="${xmlEscape(c.date_of_birth)}"` : ""}>
             <PersonName>
               <GivenName>${xmlEscape(c.first_name || 'Cliente')}</GivenName>
               <Surname>${xmlEscape(c.name || 'WhatsApp')}</Surname>
             </PersonName>
-            ${docNumber ? `<Document DocType="5" DocID="${xmlEscape(docNumber)}" DocIssueAuthority="${xmlEscape(docIssuer)}"${docIssueDate ? ` EffectiveDate="${xmlEscape(docIssueDate)}"` : ''}${docExpiryDate ? ` ExpireDate="${xmlEscape(docExpiryDate)}"` : ''}/>` : ''}
             <Telephone PhoneNumber="${xmlEscape(phone)}"/>
             <Email>${xmlEscape(email)}</Email>
-            ${(addressLine || cityName || postalCode || stateProv) ? `<Address>
-              ${addressLine ? `<AddressLine>${xmlEscape(addressLine)}</AddressLine>` : ''}
-              ${cityName ? `<CityName>${xmlEscape(cityName)}</CityName>` : ''}
-              <CountryName>${xmlEscape(countryName)}</CountryName>
-              ${postalCode ? `<PostalCode>${xmlEscape(postalCode)}</PostalCode>` : ''}
-              ${stateProv ? `<StateProv>${xmlEscape(stateProv)}</StateProv>` : ''}
-            </Address>` : ''}
           </Primary>
         </Customer>
         <VehicleCharges>
@@ -801,9 +784,7 @@ async function createReservation(session, from) {
         </VehicleCharges>
         <TotalCharge CurrencyCode="EUR" RateTotalAmount="${net.toFixed(2)}" EstimatedTotalAmount="${amount.toFixed(2)}"/>
       </VehResRQCore>
-      <VehResRQInfo ResStatus="Book">
-        ${licenseNote ? `<SpecialReqPref>${xmlEscape(licenseNote)}</SpecialReqPref>` : ''}
-      </VehResRQInfo>
+      <VehResRQInfo ResStatus="Book"/>
     </ns1:OTA_VehResRQ>
   </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`;
@@ -1372,6 +1353,14 @@ Errore: ${e.message}`);
         return res.end(twiml.toString());
       }
 
+      const currentContractQuestion = String((session.pending.contractQuestions || [])[idx] || '').toLowerCase();
+
+      if (currentContractQuestion.includes('secondo autista') && !yesNo(body)) {
+        twiml.message(safeWhatsAppText('Rispondimi solo SI oppure NO.'));
+        res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
+        return res.end(twiml.toString());
+      }
+
       session.pending.contractAnswers.push(body);
 
       if (idx === 18) {
@@ -1549,7 +1538,7 @@ app.post('/webhook', handleWhatsApp);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server DP Rent FOTO STAFF avviato sulla porta ${PORT}`);
+  console.log(`Server DP Rent STABILE FOTO NO SPECIALREQ avviato sulla porta ${PORT}`);
   console.log('Numeri officina:', INTERNAL_OFFICINA_NUMBERS);
   console.log('Numeri generale:', INTERNAL_GENERAL_NUMBERS);
 });
